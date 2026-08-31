@@ -6,9 +6,8 @@ import {
   Modal,
   TouchableOpacity,
   TextInput,
-  Platform,
 } from 'react-native';
-import { X, Scale, Check, Calendar } from 'lucide-react-native';
+import { X, Scale, Check } from 'lucide-react-native';
 import { PALETTE, FONTS } from '@/constants/theme';
 import { lbsToKg, kgToLbs } from '@/services/tdeeCalculator';
 import { getTodayDateString } from '@/services/storage';

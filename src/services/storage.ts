@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { FoodEntry, DailySummary, MacroTargets, UserStats, NotificationSettings, UserProfile } from '@/types/nutrition';
+import { FoodEntry, MacroTargets, UserStats, NotificationSettings, UserProfile } from '@/types/nutrition';
 
 const STORAGE_KEYS = {
   ENTRIES: '@cal_ai_food_entries_v1',

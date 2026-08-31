@@ -10,7 +10,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Flame, Sparkles, Plus, Calendar, Clock, ChevronRight } from 'lucide-react-native';
+import { Flame, Sparkles } from 'lucide-react-native';
 import { useNutrition } from '@/context/NutritionContext';
 import { CalorieRing } from '@/components/CalorieRing';
 import { MacroMiniCard } from '@/components/MacroMiniCard';

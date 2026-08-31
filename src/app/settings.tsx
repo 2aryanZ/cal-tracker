@@ -440,7 +440,7 @@ export default function SettingsScreen() {
             <Text style={styles.apiKeyLabel}>Google Gemini API Key</Text>
           </View>
           <Text style={styles.apiKeySub}>
-            Provides live multimodal image recognition directly through Google's Gemini Vision API.
+            Provides live multimodal image recognition directly through Google&apos;s Gemini Vision API.
           </Text>
           <TextInput
             value={apiKey}

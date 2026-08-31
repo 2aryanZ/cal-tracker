@@ -8,7 +8,6 @@ import {
   SafeAreaView,
   Platform,
 } from 'react-native';
-import { useRouter } from 'expo-router';
 import {
   ChevronLeft,
   ChevronRight,
@@ -28,13 +27,11 @@ import { MealType, AiFoodDetectionResult, FoodEntry } from '@/types/nutrition';
 import { PALETTE, FONTS } from '@/constants/theme';
 
 export default function HistoryScreen() {
-  const router = useRouter();
   const {
     entries,
     selectedDate,
     setSelectedDate,
     goals,
-    stats,
     logMeal,
     editMeal,
     removeMeal,

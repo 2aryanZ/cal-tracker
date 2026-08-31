@@ -16,7 +16,6 @@ import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import {
   X,
-  HelpCircle,
   Zap,
   Image as ImageIcon,
   Scan,

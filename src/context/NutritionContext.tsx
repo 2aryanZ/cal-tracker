@@ -114,6 +114,7 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
 
   const loadData = async () => {
     try {
+      setIsLoading(true);
       await initializeStorage();
       const [
         storedEntries,
@@ -148,6 +149,8 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
       scheduleMealReminders(storedNotifs);
     } catch (err) {
       console.error('Failed to load nutrition state:', err);
+    } finally {
+      setIsLoading(false);
     }
   };
 

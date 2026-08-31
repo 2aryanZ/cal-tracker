@@ -1,6 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Modal, TouchableOpacity, Animated } from 'react-native';
-import { Flame, Sparkles, Trophy, Zap, CheckCircle2 } from 'lucide-react-native';
+import { Flame, Sparkles, Zap, CheckCircle2 } from 'lucide-react-native';
 
 interface RewardCelebrationProps {
   visible: boolean;
@@ -19,8 +19,8 @@ export function RewardCelebration({
   caloriesAdded,
   onDismiss,
 }: RewardCelebrationProps) {
-  const scaleAnim = React.useRef(new Animated.Value(0.7)).current;
-  const opacityAnim = React.useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.7)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (visible) {
@@ -47,7 +47,7 @@ export function RewardCelebration({
       scaleAnim.setValue(0.7);
       opacityAnim.setValue(0);
     }
-  }, [visible]);
+  }, [visible, onDismiss, opacityAnim, scaleAnim]);
 
   if (!visible) return null;
 
@@ -82,7 +82,7 @@ export function RewardCelebration({
             <View style={styles.statsCard}>
               <CheckCircle2 size={18} color="#10B981" />
               <Text style={styles.statsText}>
-                <Text style={styles.statsHighlight}>+{caloriesAdded} kcal</Text> counted toward today's goal
+                <Text style={styles.statsHighlight}>+{caloriesAdded} kcal</Text> counted toward today&apos;s goal
               </Text>
             </View>
           )}
@@ -108,110 +108,110 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: '#1E293B',
     borderRadius: 28,
-    paddingHorizontal: 24,
-    paddingTop: 32,
-    paddingBottom: 24,
+    padding: 24,
     width: '100%',
-    maxWidth: 340,
+    maxWidth: 380,
     alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: '#38BDF8',
-    shadowColor: '#38BDF8',
-    shadowOffset: { width: 0, height: 10 },
+    borderWidth: 1,
+    borderColor: '#334155',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 16 },
     shadowOpacity: 0.4,
-    shadowRadius: 20,
-    elevation: 10,
+    shadowRadius: 24,
+    elevation: 20,
   },
   trophyGlow: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    backgroundColor: 'rgba(245, 158, 11, 0.2)',
-    alignItems: 'center',
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
     justifyContent: 'center',
+    alignItems: 'center',
     marginBottom: 16,
+    borderWidth: 2,
+    borderColor: 'rgba(245, 158, 11, 0.3)',
   },
   trophyInner: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#0F172A',
-    borderWidth: 2,
-    borderColor: '#F59E0B',
-    alignItems: 'center',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#334155',
     justifyContent: 'center',
+    alignItems: 'center',
   },
   streakPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#78350F',
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 16,
-    marginBottom: 12,
+    backgroundColor: 'rgba(245, 158, 11, 0.2)',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#F59E0B',
+    borderColor: 'rgba(245, 158, 11, 0.4)',
   },
   streakPillText: {
+    color: '#F59E0B',
     fontSize: 12,
     fontWeight: '800',
-    color: '#FCD34D',
     letterSpacing: 0.5,
   },
   title: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: '#F8FAFC',
     textAlign: 'center',
-    marginBottom: 6,
+    marginBottom: 8,
   },
   subtitle: {
-    fontSize: 13,
+    fontSize: 14,
     color: '#94A3B8',
     textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 16,
+    lineHeight: 20,
+    marginBottom: 20,
   },
   statsCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
     backgroundColor: '#0F172A',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    marginBottom: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 16,
+    marginBottom: 24,
+    width: '100%',
     borderWidth: 1,
     borderColor: '#334155',
   },
   statsText: {
-    fontSize: 12,
-    color: '#E2E8F0',
-    flexShrink: 1,
+    color: '#94A3B8',
+    fontSize: 13,
+    fontWeight: '500',
   },
   statsHighlight: {
-    fontWeight: '700',
     color: '#10B981',
+    fontWeight: '700',
   },
   button: {
-    backgroundColor: '#38BDF8',
-    width: '100%',
-    borderRadius: 16,
-    paddingVertical: 14,
+    backgroundColor: '#F59E0B',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    shadowColor: '#38BDF8',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 18,
+    width: '100%',
+    shadowColor: '#F59E0B',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowRadius: 12,
+    elevation: 6,
   },
   buttonText: {
-    fontSize: 15,
-    fontWeight: '800',
     color: '#0F172A',
+    fontSize: 15,
+    fontWeight: '700',
   },
 });

@@ -9,21 +9,15 @@ import {
   ScrollView,
   SafeAreaView,
   Platform,
-  Image,
   Alert,
 } from 'react-native';
 import {
   ChevronLeft,
   X,
   Sparkles,
-  Flame,
-  Check,
   ShieldCheck,
-  Zap,
   ArrowRight,
-  User,
 } from 'lucide-react-native';
-import Svg, { Path, Circle } from 'react-native-svg';
 import { PALETTE, FONTS } from '@/constants/theme';
 
 interface AuthModalProps {
@@ -41,7 +35,6 @@ export function AuthModal({
 }: AuthModalProps) {
   const [step, setStep] = useState<1 | 2 | 3>(initialStep);
   const [email, setEmail] = useState('');
-  const [name, setName] = useState('');
 
   const handleConnect = () => {
     if (!email || !email.includes('@')) {
@@ -49,7 +42,7 @@ export function AuthModal({
       return;
     }
 
-    onSignIn(email, name.trim() || undefined);
+    onSignIn(email);
     onClose();
   };
 

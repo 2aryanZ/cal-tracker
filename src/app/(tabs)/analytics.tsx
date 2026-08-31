@@ -9,7 +9,7 @@ import {
   Platform,
 } from 'react-native';
 import Svg, { Path, Circle, Line, Defs, LinearGradient, Stop } from 'react-native-svg';
-import { Flame, ArrowRight, Check, TrendingUp, TrendingDown, Plus, Trash2, Scale, Target } from 'lucide-react-native';
+import { Flame, ArrowRight, Check, TrendingUp, TrendingDown, Plus, Trash2 } from 'lucide-react-native';
 import { useNutrition } from '@/context/NutritionContext';
 import { kgToLbs, lbsToKg } from '@/services/tdeeCalculator';
 import { getWeightLogs, addWeightLog, deleteWeightLog } from '@/services/storage';

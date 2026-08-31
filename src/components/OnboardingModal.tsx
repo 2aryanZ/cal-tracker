@@ -16,7 +16,6 @@ import {
   ArrowRight,
   ArrowLeft,
   Check,
-  Target,
   Flame,
   Activity,
   Award,
@@ -209,7 +208,7 @@ export function OnboardingModal({
           {/* Step 1: Goal Selection */}
           {step === 1 && (
             <ScrollView style={styles.scrollBody} showsVerticalScrollIndicator={false}>
-              <Text style={styles.stepTitle}>What's your primary goal?</Text>
+              <Text style={styles.stepTitle}>What&apos;s your primary goal?</Text>
               <Text style={styles.stepSubtitle}>
                 We calculate precise metabolic targets tailored to your objective.
               </Text>

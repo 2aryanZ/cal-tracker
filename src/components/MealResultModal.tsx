@@ -28,7 +28,6 @@ import {
 } from 'lucide-react-native';
 import { AiFoodDetectionResult, MealType, FoodEntry } from '@/types/nutrition';
 import {
-  COMPREHENSIVE_FOOD_DATABASE,
   FoodDatabaseItem,
   searchFoodDatabase,
 } from '@/services/aiFoodService';
