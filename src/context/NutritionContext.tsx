@@ -38,6 +38,7 @@ import {
   DEFAULT_ACCOUNT,
 } from '@/services/storage';
 import { scheduleMealReminders, sendInstantStreakCelebration } from '@/services/notificationService';
+import { supabaseSignUp, supabaseSignOut, supabaseSyncFoodEntry } from '@/services/supabase';
 
 interface RewardState {
   visible: boolean;
@@ -204,12 +205,17 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
 
   // Authentication Handlers
   const signIn = async (email: string, name?: string) => {
-    const account = await signInUser(email, name);
+    // 1. Sign up/in directly with Supabase Auth
+    const res = await supabaseSignUp(email, undefined, name);
+    const account: UserAccount = res.user || (await signInUser(email, name));
+
     setUserAccount(account);
+    await saveUserAccount(account);
     showToast('Welcome back! 👋', `Signed in as ${account.name} (${account.email})`, 'sparkles');
   };
 
   const signOut = async () => {
+    await supabaseSignOut();
     const account = await signOutUser();
     setUserAccount(account);
     showToast('Signed Out', 'You are now browsing in guest mode.', 'sparkles');
@@ -236,6 +242,9 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
       const { entries: updatedEntries, stats: updatedStats } = await saveFoodEntry(newEntry);
       setEntries(updatedEntries);
       setStats(updatedStats);
+
+      // Non-blocking sync to Supabase PostgreSQL database
+      supabaseSyncFoodEntry(newEntry);
 
       // Trigger Haptic feedback on device
       if (Platform.OS !== 'web') {

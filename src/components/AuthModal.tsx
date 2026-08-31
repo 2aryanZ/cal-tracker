@@ -10,6 +10,7 @@ import {
   SafeAreaView,
   Platform,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import {
   ChevronLeft,
@@ -35,26 +36,43 @@ export function AuthModal({
 }: AuthModalProps) {
   const [step, setStep] = useState<1 | 2 | 3>(initialStep);
   const [email, setEmail] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleConnect = () => {
+  const handleConnect = async () => {
     if (!email || !email.includes('@')) {
       Alert.alert('Invalid Email', 'Please enter a valid email address.');
       return;
     }
 
-    onSignIn(email);
-    onClose();
+    setIsSubmitting(true);
+    try {
+      await onSignIn(email, email.split('@')[0]);
+      onClose();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Auth failed';
+      Alert.alert('Sign In Error', msg);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleSocialSignIn = (provider: 'google' | 'apple' | 'demo') => {
-    if (provider === 'google') {
-      onSignIn('user.google@caltracker.app', 'Google User');
-    } else if (provider === 'apple') {
-      onSignIn('user.apple@caltracker.app', 'Apple User');
-    } else {
-      onSignIn('aryan@example.com', 'Aryan');
+  const handleSocialSignIn = async (provider: 'google' | 'apple' | 'demo') => {
+    setIsSubmitting(true);
+    try {
+      if (provider === 'google') {
+        await onSignIn('google.user@caltracker.app', 'Google User');
+      } else if (provider === 'apple') {
+        await onSignIn('apple.user@caltracker.app', 'Apple User');
+      } else {
+        await onSignIn('aryan@caltracker.app', 'Aryan');
+      }
+      onClose();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Auth failed';
+      Alert.alert('Sign In Error', msg);
+    } finally {
+      setIsSubmitting(false);
     }
-    onClose();
   };
 
   if (!visible) return null;
@@ -218,8 +236,13 @@ export function AuthModal({
                 <TouchableOpacity
                   style={styles.connectBtn}
                   onPress={handleConnect}
+                  disabled={isSubmitting}
                   activeOpacity={0.85}>
-                  <Text style={styles.connectBtnText}>Connect</Text>
+                  {isSubmitting ? (
+                    <ActivityIndicator size="small" color={PALETTE[50]} />
+                  ) : (
+                    <Text style={styles.connectBtnText}>Connect with Supabase</Text>
+                  )}
                 </TouchableOpacity>
 
                 {/* "──── Or ────" Divider */}
