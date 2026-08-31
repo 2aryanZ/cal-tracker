@@ -37,21 +37,19 @@ export async function scheduleMealReminders(settings: NotificationSettings): Pro
   if (Platform.OS === 'web') return;
 
   try {
-    // Cancel all previously scheduled notifications
     await Notifications.cancelAllScheduledNotificationsAsync();
-
     if (!settings.enabled) return;
 
     const granted = await requestNotificationPermissions();
     if (!granted) return;
 
-    // 1. Breakfast Reminder
+    // 1. Breakfast Motivational Reminder
     if (settings.breakfastReminder) {
       const [hour, minute] = settings.breakfastTime.split(':').map(Number);
       await Notifications.scheduleNotificationAsync({
         content: {
-          title: '☀️ Time for Breakfast!',
-          body: 'Have you tracked your morning fuel yet? Keep your streak active with Cal AI!',
+          title: '⚠️ You have not done this: Breakfast!',
+          body: 'Breakfast is still unlogged. Fuel up and track your morning calories to stay ahead!',
           data: { screen: 'scan', mealType: 'breakfast' },
           sound: true,
         },
@@ -63,13 +61,13 @@ export async function scheduleMealReminders(settings: NotificationSettings): Pro
       });
     }
 
-    // 2. Lunch Reminder
+    // 2. Midday Motivational Boost
     if (settings.lunchReminder) {
       const [hour, minute] = settings.lunchTime.split(':').map(Number);
       await Notifications.scheduleNotificationAsync({
         content: {
-          title: '🥗 Lunch Check-in!',
-          body: 'Snap a quick photo of your lunch to hit your protein target for the day.',
+          title: '💪 You can do this!',
+          body: 'You are crushing your progress. Snap your lunch now to keep your protein on point.',
           data: { screen: 'scan', mealType: 'lunch' },
           sound: true,
         },
@@ -81,13 +79,13 @@ export async function scheduleMealReminders(settings: NotificationSettings): Pro
       });
     }
 
-    // 3. Dinner Reminder
+    // 3. Evening Pending Meal Reminder
     if (settings.dinnerReminder) {
       const [hour, minute] = settings.dinnerTime.split(':').map(Number);
       await Notifications.scheduleNotificationAsync({
         content: {
-          title: '🍽️ What’s on the dinner plate?',
-          body: 'Don’t forget to log your dinner and check your remaining macros!',
+          title: '🍽️ This is also not done: Dinner is pending!',
+          body: 'Log your evening dinner before you wind down so you lock in today’s nutrition targets.',
           data: { screen: 'scan', mealType: 'dinner' },
           sound: true,
         },
@@ -99,14 +97,14 @@ export async function scheduleMealReminders(settings: NotificationSettings): Pro
       });
     }
 
-    // 4. Evening Streak Retention Hook
+    // 4. Night Streak & Goal Completion Push
     if (settings.streakReminder) {
       const [hour, minute] = settings.streakTime.split(':').map(Number);
       await Notifications.scheduleNotificationAsync({
         content: {
-          title: '🔥 Daily Streak Check!',
-          body: 'Review today’s calorie goals before midnight to lock in your daily streak!',
-          data: { screen: 'history' },
+          title: '🔥 You can do this: Close your daily goals!',
+          body: 'Check your remaining macros and hydration before midnight to maintain your streak!',
+          data: { screen: 'index' },
           sound: true,
         },
         trigger: {
@@ -127,13 +125,47 @@ export async function sendInstantStreakCelebration(streakCount: number): Promise
   try {
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: `🔥 ${streakCount}-Day Streak Achieved!`,
-        body: `Unbelievable consistency! You are dominating your nutrition targets.`,
+        title: `🏆 Goal Completed: ${streakCount}-Day Streak!`,
+        body: `You did it! Perfect macro balance locked in for today.`,
         sound: true,
       },
-      trigger: null, // trigger immediately
+      trigger: null,
     });
   } catch (error) {
     console.warn('Error triggering streak celebration notification:', error);
+  }
+}
+
+export async function sendMotivationalGoalReminder(type: 'unlogged' | 'almost_done' | 'hydration' | 'protein', detail?: string): Promise<void> {
+  if (Platform.OS === 'web') return;
+
+  try {
+    let title = '💪 You can do this!';
+    let body = 'Take a second to log your progress and hit your daily goal.';
+
+    if (type === 'unlogged') {
+      title = '⚠️ You have not done this!';
+      body = detail ? `Your ${detail} is still unlogged. Tap to record it in 5 seconds.` : 'You have unlogged meals pending today!';
+    } else if (type === 'almost_done') {
+      title = '🎯 You are almost there!';
+      body = detail ? `Only ${detail} left to hit your daily calorie target. You got this!` : 'Just a few calories left to hit your goal!';
+    } else if (type === 'hydration') {
+      title = '💧 This is also not done: Hydration!';
+      body = detail ? `You still need ${detail} of water today. Stay hydrated!` : 'Don’t forget to log your water intake.';
+    } else if (type === 'protein') {
+      title = '🥩 Protein target pending!';
+      body = detail ? `Only ${detail} of protein left to lock in muscle recovery.` : 'Hit your protein goal before the day ends.';
+    }
+
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        sound: true,
+      },
+      trigger: null,
+    });
+  } catch (error) {
+    console.warn('Error triggering motivational goal reminder:', error);
   }
 }

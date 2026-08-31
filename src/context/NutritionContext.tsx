@@ -39,6 +39,8 @@ import {
 } from '@/services/storage';
 import { scheduleMealReminders, sendInstantStreakCelebration } from '@/services/notificationService';
 import { supabaseSignUp, supabaseSignOut, supabaseSyncFoodEntry } from '@/services/supabase';
+import { playGoalChime } from '@/services/soundService';
+import { triggerGoalCelebrationHaptic, triggerSuccessFeedback, triggerLightImpact } from '@/services/hapticsService';
 
 interface RewardState {
   visible: boolean;
@@ -259,6 +261,10 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
       const isGoalHit = totalDayCal >= goals.calories * 0.9 && totalDayCal <= goals.calories * 1.1;
 
       if (isGoalHit) {
+        // 🎵 Play success chime and trigger multi-stage celebration haptic
+        playGoalChime();
+        triggerGoalCelebrationHaptic();
+
         setRewardState({
           visible: true,
           streak: stats.currentStreak + 1,
@@ -268,6 +274,7 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
         });
         sendInstantStreakCelebration(stats.currentStreak + 1);
       } else {
+        triggerSuccessFeedback();
         showToast(
           `Logged ${meal.name}`,
           `+${meal.calories} kcal • ${meal.protein}g Protein added to ${meal.mealType.toUpperCase()}`,
@@ -283,6 +290,7 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
     try {
       const updated = await updateFoodEntry(entry);
       setEntries(updated);
+      triggerSuccessFeedback();
       showToast('Meal Updated', `${entry.name} adjusted to ${entry.calories} kcal.`, 'sparkles');
     } catch (error) {
       console.error('Error editing meal:', error);
@@ -293,6 +301,7 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
     try {
       const updated = await deleteFoodEntry(id);
       setEntries(updated);
+      triggerLightImpact();
       showToast('Meal Deleted', 'Entry removed from daily log.', 'sparkles');
     } catch (error) {
       console.error('Error removing meal:', error);
@@ -339,6 +348,8 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
   };
 
   const triggerManualReward = () => {
+    playGoalChime();
+    triggerGoalCelebrationHaptic();
     setRewardState({
       visible: true,
       streak: stats.currentStreak,

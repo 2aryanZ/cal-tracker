@@ -6,6 +6,7 @@
     "@react-native-async-storage/async-storage": "2.1.2",
     "@supabase/supabase-js": "^2.112.4",
     "expo": "~54.0.8",
+    "expo-av": "~16.0.8",
     "expo-camera": "~17.0.8",
     "expo-constants": "~18.0.14",
     "expo-device": "~8.0.10",

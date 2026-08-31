@@ -21,6 +21,7 @@ import {
   Sparkles,
 } from 'lucide-react-native';
 import { PALETTE, FONTS } from '@/constants/theme';
+import { triggerSelection, triggerMediumImpact, triggerLightImpact } from '@/services/hapticsService';
 import { useNutrition } from '@/context/NutritionContext';
 import { WeightLogModal } from '@/components/WeightLogModal';
 import { MealResultModal } from '@/components/MealResultModal';
@@ -78,6 +79,7 @@ function CustomTabBar({ state, navigation, onPlusPress }: CustomTabBarProps) {
           const isFocused = state.index === index;
 
           const onPress = () => {
+            triggerSelection();
             if (route.name === 'scan') {
               router.push('/settings');
               return;
@@ -113,7 +115,10 @@ function CustomTabBar({ state, navigation, onPlusPress }: CustomTabBarProps) {
       <View style={styles.plusContainer}>
         <TouchableOpacity
           style={styles.plusButton}
-          onPress={onPlusPress}
+          onPress={() => {
+            triggerMediumImpact();
+            onPlusPress();
+          }}
           activeOpacity={0.85}>
           <Plus size={22} color={PALETTE.white} strokeWidth={2.2} />
         </TouchableOpacity>
@@ -209,6 +214,7 @@ export default function TabsLayout() {
             <TouchableOpacity
               style={styles.actionOptionCard}
               onPress={() => {
+                triggerLightImpact();
                 setIsActionMenuOpen(false);
                 router.push('/(tabs)/scan');
               }}
@@ -233,6 +239,7 @@ export default function TabsLayout() {
             <TouchableOpacity
               style={styles.actionOptionCard}
               onPress={() => {
+                triggerLightImpact();
                 setIsActionMenuOpen(false);
                 setIsWeightModalOpen(true);
               }}
@@ -257,6 +264,7 @@ export default function TabsLayout() {
             <TouchableOpacity
               style={styles.actionOptionCard}
               onPress={() => {
+                triggerLightImpact();
                 setIsActionMenuOpen(false);
                 setIsMealModalOpen(true);
               }}

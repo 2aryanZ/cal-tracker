@@ -19,6 +19,7 @@ import { MealResultModal } from '@/components/MealResultModal';
 import { getTodayDateString } from '@/services/storage';
 import { MealType, AiFoodDetectionResult, FoodEntry } from '@/types/nutrition';
 import { PALETTE, FONTS } from '@/constants/theme';
+import { triggerLightImpact, triggerSelection } from '@/services/hapticsService';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -86,6 +87,7 @@ export default function HomeScreen() {
   const snackEntries = useMemo(() => dateEntries.filter((e) => e.mealType === 'snack'), [dateEntries]);
 
   const handleOpenAdd = useCallback((type: MealType) => {
+    triggerLightImpact();
     setEditingEntry(null);
     setActiveMealType(type);
     setSampleResult({
@@ -107,6 +109,7 @@ export default function HomeScreen() {
   }, []);
 
   const handleOpenEdit = useCallback((entry: FoodEntry) => {
+    triggerLightImpact();
     setEditingEntry(entry);
     setSampleResult(null);
     setModalVisible(true);
@@ -140,7 +143,10 @@ export default function HomeScreen() {
           <TouchableOpacity
             key={item.dateStr}
             style={styles.dayColumn}
-            onPress={() => setSelectedDate(item.dateStr)}
+            onPress={() => {
+              triggerSelection();
+              setSelectedDate(item.dateStr);
+            }}
             activeOpacity={0.7}>
             <Text style={styles.dayNameText}>{item.dayName}</Text>
             <View
@@ -262,7 +268,10 @@ export default function HomeScreen() {
           <View style={styles.waterQuickBtnsRow}>
             <TouchableOpacity
               style={styles.waterQuickBtn}
-              onPress={() => setWaterMl((prev) => prev + 250)}
+              onPress={() => {
+                triggerLightImpact();
+                setWaterMl((prev) => prev + 250);
+              }}
               activeOpacity={0.8}>
               <Plus size={12} color="#0284C7" />
               <Text style={styles.waterQuickBtnText}>+250 ml (Glass)</Text>
@@ -270,7 +279,10 @@ export default function HomeScreen() {
 
             <TouchableOpacity
               style={styles.waterQuickBtn}
-              onPress={() => setWaterMl((prev) => prev + 500)}
+              onPress={() => {
+                triggerLightImpact();
+                setWaterMl((prev) => prev + 500);
+              }}
               activeOpacity={0.8}>
               <Plus size={12} color="#0284C7" />
               <Text style={styles.waterQuickBtnText}>+500 ml (Bottle)</Text>
@@ -287,7 +299,10 @@ export default function HomeScreen() {
                 styles.filterPill,
                 selectedCategoryFilter === cat && styles.filterPillActive,
               ]}
-              onPress={() => setSelectedCategoryFilter(cat)}
+              onPress={() => {
+                triggerSelection();
+                setSelectedCategoryFilter(cat);
+              }}
               activeOpacity={0.7}>
               <Text
                 style={[

@@ -1,6 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Modal, TouchableOpacity, Animated } from 'react-native';
 import { Flame, Sparkles, Zap, CheckCircle2 } from 'lucide-react-native';
+import { playGoalChime } from '@/services/soundService';
+import { triggerGoalCelebrationHaptic } from '@/services/hapticsService';
 
 interface RewardCelebrationProps {
   visible: boolean;
@@ -24,6 +26,9 @@ export function RewardCelebration({
 
   useEffect(() => {
     if (visible) {
+      playGoalChime();
+      triggerGoalCelebrationHaptic();
+
       Animated.parallel([
         Animated.spring(scaleAnim, {
           toValue: 1,

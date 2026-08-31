@@ -32,6 +32,7 @@ import {
   searchFoodDatabase,
 } from '@/services/aiFoodService';
 import { PALETTE, FONTS } from '@/constants/theme';
+import { triggerLightImpact, triggerSelection, triggerSuccessFeedback } from '@/services/hapticsService';
 
 interface IngredientItem {
   id: string;
@@ -188,6 +189,7 @@ export function MealResultModal({
   };
 
   const handleSelectFoodPreset = (item: FoodDatabaseItem) => {
+    triggerSelection();
     setFoodName(item.name);
     setCalories(String(item.calories));
     setProtein(String(item.protein));
@@ -209,6 +211,7 @@ export function MealResultModal({
 
   const handleMultiplierChange = (newMultiplier: number) => {
     if (newMultiplier <= 0) return;
+    triggerLightImpact();
     const ratio = newMultiplier / multiplier;
     setMultiplier(newMultiplier);
     setCalories(String(Math.round((Number(calories) || 0) * ratio)));
@@ -219,6 +222,7 @@ export function MealResultModal({
 
   // Add new ingredient row
   const handleAddIngredient = () => {
+    triggerLightImpact();
     const newIng: IngredientItem = {
       id: `ing_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
       name: 'New Ingredient',
@@ -251,6 +255,7 @@ export function MealResultModal({
 
   // Delete ingredient row
   const handleDeleteIngredient = (id: string) => {
+    triggerLightImpact();
     const updated = ingredients.filter((item) => item.id !== id);
     setIngredients(updated);
     const totalCal = updated.reduce((sum, item) => sum + (Number(item.calories) || 0), 0);
@@ -258,6 +263,7 @@ export function MealResultModal({
   };
 
   const handleSave = () => {
+    triggerSuccessFeedback();
     onConfirm({
       id: editingEntry?.id,
       name: foodName.trim() || 'Logged Meal',

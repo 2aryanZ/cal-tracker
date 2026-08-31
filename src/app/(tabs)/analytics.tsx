@@ -16,6 +16,7 @@ import { getWeightLogs, addWeightLog, deleteWeightLog } from '@/services/storage
 import { WeightEntry } from '@/types/nutrition';
 import { WeightLogModal } from '@/components/WeightLogModal';
 import { PALETTE, FONTS } from '@/constants/theme';
+import { triggerLightImpact, triggerSelection } from '@/services/hapticsService';
 
 export default function AnalyticsScreen() {
   const { stats, goals, userProfile, saveProfile, showToast } = useNutrition();
@@ -211,6 +212,7 @@ export default function AnalyticsScreen() {
             <TouchableOpacity
               style={styles.rapidAdjustBtn}
               onPress={() => {
+                triggerLightImpact();
                 const nextLbs = Math.round((currentWeightLbs - 0.5) * 10) / 10;
                 handleAddWeight({
                   weightLbs: nextLbs,
@@ -225,6 +227,7 @@ export default function AnalyticsScreen() {
             <TouchableOpacity
               style={styles.rapidAdjustBtn}
               onPress={() => {
+                triggerLightImpact();
                 const nextLbs = Math.round((currentWeightLbs + 0.5) * 10) / 10;
                 handleAddWeight({
                   weightLbs: nextLbs,
@@ -238,7 +241,10 @@ export default function AnalyticsScreen() {
 
             <TouchableOpacity
               style={[styles.rapidAdjustBtn, styles.rapidAdjustBtnCustom]}
-              onPress={() => setIsModalOpen(true)}>
+              onPress={() => {
+                triggerLightImpact();
+                setIsModalOpen(true);
+              }}>
               <Text style={styles.rapidAdjustBtnCustomText}>Custom Weigh-In</Text>
             </TouchableOpacity>
           </View>
@@ -325,6 +331,7 @@ export default function AnalyticsScreen() {
                 key={r}
                 style={[styles.rangePill, timeRange === r && styles.rangePillActive]}
                 onPress={() => {
+                  triggerSelection();
                   setTimeRange(r);
                   setSelectedPointIdx(0);
                 }}
