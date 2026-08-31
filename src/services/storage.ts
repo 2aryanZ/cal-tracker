@@ -1,0 +1,500 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { FoodEntry, DailySummary, MacroTargets, UserStats, NotificationSettings, UserProfile } from '@/types/nutrition';
+
+const STORAGE_KEYS = {
+  ENTRIES: '@cal_ai_food_entries_v1',
+  GOALS: '@cal_ai_macro_goals_v1',
+  STATS: '@cal_ai_user_stats_v1',
+  NOTIFICATIONS: '@cal_ai_notifications_v1',
+  API_KEY: '@cal_ai_gemini_api_key_v1',
+  INITIALIZED: '@cal_ai_has_seeded_v1',
+  USER_PROFILE: '@cal_ai_user_profile_v1',
+  ONBOARDING_DONE: '@cal_ai_onboarding_done_v1',
+  WEIGHT_LOGS: '@cal_ai_weight_logs_v1',
+  ACCOUNT: '@cal_ai_user_account_v1',
+};
+
+export const DEFAULT_PROFILE: UserProfile = {
+  gender: 'male',
+  age: 26,
+  heightCm: 178,
+  weightKg: 78,
+  targetWeightKg: 74,
+  dailySteps: 8500,
+  activityLevel: 'moderate',
+  goal: 'fat_loss',
+  unitSystem: 'metric',
+};
+
+export const DEFAULT_GOALS: MacroTargets = {
+  calories: 2200,
+  protein: 150,
+  carbs: 220,
+  fats: 65,
+  waterMl: 2500,
+};
+
+export const DEFAULT_NOTIFICATIONS: NotificationSettings = {
+  enabled: true,
+  breakfastReminder: true,
+  breakfastTime: '08:30',
+  lunchReminder: true,
+  lunchTime: '13:00',
+  dinnerReminder: true,
+  dinnerTime: '19:30',
+  streakReminder: true,
+  streakTime: '21:30',
+};
+
+export const DEFAULT_STATS: UserStats = {
+  currentStreak: 3,
+  bestStreak: 7,
+  lastLoggedDate: getTodayDateString(),
+  totalMealsLogged: 12,
+  rankTitle: 'Macro Master',
+};
+
+export function getTodayDateString(): string {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+export function formatDateLabel(dateStr: string): string {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const d = new Date(year, month - 1, day);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+
+  if (dateStr === getTodayDateString()) return 'Today';
+  if (
+    d.getDate() === yesterday.getDate() &&
+    d.getMonth() === yesterday.getMonth() &&
+    d.getFullYear() === yesterday.getFullYear()
+  ) {
+    return 'Yesterday';
+  }
+
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+function calculateRank(streak: number, totalMeals: number): string {
+  if (streak >= 30) return 'Legendary Nutritionist';
+  if (streak >= 14) return 'Macro Prodigy';
+  if (streak >= 7) return 'Streak Beast';
+  if (streak >= 3) return 'Macro Master';
+  if (totalMeals >= 5) return 'Calorie Crusher';
+  return 'Calorie Starter';
+}
+
+// Generate realistic mock history for the past 6 days so user sees analytics immediately
+function generateSeedEntries(): FoodEntry[] {
+  const entries: FoodEntry[] = [];
+  const today = new Date();
+
+  // Create entries for past 5 days
+  for (let i = 5; i >= 1; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const dateStr = d.toISOString().split('T')[0];
+
+    entries.push(
+      {
+        id: `seed-bf-${i}`,
+        name: 'Oatmeal with Berries & Whey',
+        calories: 420,
+        protein: 32,
+        carbs: 54,
+        fats: 8,
+        mealType: 'breakfast',
+        timestamp: `${dateStr}T08:30:00.000Z`,
+        date: dateStr,
+        portionSize: '1 bowl',
+        confidence: 0.95,
+        isAiGenerated: true,
+      },
+      {
+        id: `seed-lu-${i}`,
+        name: 'Grilled Chicken Rice Bowl with Avocado',
+        calories: 680,
+        protein: 52,
+        carbs: 65,
+        fats: 22,
+        mealType: 'lunch',
+        timestamp: `${dateStr}T13:15:00.000Z`,
+        date: dateStr,
+        portionSize: '1 large bowl',
+        confidence: 0.93,
+        isAiGenerated: true,
+      },
+      {
+        id: `seed-dn-${i}`,
+        name: 'Salmon Fillet with Sweet Potato & Asparagus',
+        calories: 720,
+        protein: 48,
+        carbs: 58,
+        fats: 28,
+        mealType: 'dinner',
+        timestamp: `${dateStr}T19:45:00.000Z`,
+        date: dateStr,
+        portionSize: '1 plate',
+        confidence: 0.96,
+        isAiGenerated: true,
+      },
+      {
+        id: `seed-sn-${i}`,
+        name: 'Greek Yogurt with Almonds',
+        calories: 240,
+        protein: 20,
+        carbs: 14,
+        fats: 10,
+        mealType: 'snack',
+        timestamp: `${dateStr}T16:30:00.000Z`,
+        date: dateStr,
+        portionSize: '1 cup',
+        confidence: 0.91,
+        isAiGenerated: true,
+      }
+    );
+  }
+
+  // Today's initial breakfast
+  const todayStr = getTodayDateString();
+  entries.push({
+    id: 'seed-today-bf',
+    name: 'Scrambled Eggs & Avocado Toast',
+    calories: 460,
+    protein: 28,
+    carbs: 34,
+    fats: 22,
+    mealType: 'breakfast',
+    timestamp: `${todayStr}T08:45:00.000Z`,
+    date: todayStr,
+    portionSize: '2 slices + 2 eggs',
+    confidence: 0.94,
+    isAiGenerated: true,
+  });
+
+  return entries;
+}
+
+export async function initializeStorage(): Promise<void> {
+  try {
+    const isInitialized = await AsyncStorage.getItem(STORAGE_KEYS.INITIALIZED);
+    if (!isInitialized) {
+      const seedEntries = generateSeedEntries();
+      await AsyncStorage.setItem(STORAGE_KEYS.ENTRIES, JSON.stringify(seedEntries));
+      await AsyncStorage.setItem(STORAGE_KEYS.GOALS, JSON.stringify(DEFAULT_GOALS));
+      await AsyncStorage.setItem(STORAGE_KEYS.STATS, JSON.stringify(DEFAULT_STATS));
+      await AsyncStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(DEFAULT_NOTIFICATIONS));
+      await AsyncStorage.setItem(STORAGE_KEYS.INITIALIZED, 'true');
+    }
+  } catch (error) {
+    console.error('Failed to initialize storage:', error);
+  }
+}
+
+// In-memory hot cache for instant zero-latency UI hydration
+let cachedEntries: FoodEntry[] | null = null;
+let cachedWeightLogs: import('@/types/nutrition').WeightEntry[] | null = null;
+
+export async function getFoodEntries(): Promise<FoodEntry[]> {
+  if (cachedEntries) return cachedEntries;
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEYS.ENTRIES);
+    cachedEntries = raw ? JSON.parse(raw) : [];
+    return cachedEntries!;
+  } catch (error) {
+    console.error('Error fetching food entries:', error);
+    return [];
+  }
+}
+
+export async function saveFoodEntry(entry: FoodEntry): Promise<{ entries: FoodEntry[]; stats: UserStats }> {
+  try {
+    const entries = await getFoodEntries();
+    const updatedEntries = [entry, ...entries];
+    cachedEntries = updatedEntries;
+    AsyncStorage.setItem(STORAGE_KEYS.ENTRIES, JSON.stringify(updatedEntries)).catch(console.error);
+
+    // Update stats
+    const stats = await getUserStats();
+    const today = getTodayDateString();
+
+    let newStreak = stats.currentStreak;
+    if (stats.lastLoggedDate !== today) {
+      // Check if last logged was yesterday
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+      if (stats.lastLoggedDate === yesterdayStr) {
+        newStreak += 1;
+      } else if (!stats.lastLoggedDate) {
+        newStreak = 1;
+      } else {
+        newStreak = 1;
+      }
+    }
+
+    const updatedStats: UserStats = {
+      ...stats,
+      currentStreak: newStreak,
+      bestStreak: Math.max(stats.bestStreak, newStreak),
+      lastLoggedDate: today,
+      totalMealsLogged: stats.totalMealsLogged + 1,
+      rankTitle: calculateRank(newStreak, stats.totalMealsLogged + 1),
+    };
+
+    AsyncStorage.setItem(STORAGE_KEYS.STATS, JSON.stringify(updatedStats)).catch(console.error);
+    return { entries: updatedEntries, stats: updatedStats };
+  } catch (error) {
+    console.error('Error saving food entry:', error);
+    throw error;
+  }
+}
+
+export async function getMacroGoals(): Promise<MacroTargets> {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEYS.GOALS);
+    return raw ? JSON.parse(raw) : DEFAULT_GOALS;
+  } catch (error) {
+    console.error('Error fetching goals:', error);
+    return DEFAULT_GOALS;
+  }
+}
+
+export async function saveMacroGoals(goals: MacroTargets): Promise<void> {
+  try {
+    await AsyncStorage.setItem(STORAGE_KEYS.GOALS, JSON.stringify(goals));
+  } catch (error) {
+    console.error('Error saving goals:', error);
+  }
+}
+
+export async function getUserStats(): Promise<UserStats> {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEYS.STATS);
+    return raw ? JSON.parse(raw) : DEFAULT_STATS;
+  } catch (error) {
+    console.error('Error fetching stats:', error);
+    return DEFAULT_STATS;
+  }
+}
+
+export async function getNotificationSettings(): Promise<NotificationSettings> {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEYS.NOTIFICATIONS);
+    return raw ? JSON.parse(raw) : DEFAULT_NOTIFICATIONS;
+  } catch (error) {
+    console.error('Error fetching notification settings:', error);
+    return DEFAULT_NOTIFICATIONS;
+  }
+}
+
+export async function saveNotificationSettings(settings: NotificationSettings): Promise<void> {
+  try {
+    await AsyncStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(settings));
+  } catch (error) {
+    console.error('Error saving notification settings:', error);
+  }
+}
+
+export const DEFAULT_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
+
+export async function getApiKey(): Promise<string> {
+  try {
+    const key = await AsyncStorage.getItem(STORAGE_KEYS.API_KEY);
+    return (key && key.trim().length > 10) ? key : (process.env.EXPO_PUBLIC_GEMINI_API_KEY || '');
+  } catch {
+    return process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
+  }
+}
+
+export async function saveApiKey(key: string): Promise<void> {
+  try {
+    await AsyncStorage.setItem(STORAGE_KEYS.API_KEY, key);
+  } catch (error) {
+    console.error('Error saving api key:', error);
+  }
+}
+
+export async function updateFoodEntry(updated: FoodEntry): Promise<FoodEntry[]> {
+  try {
+    const entries = await getFoodEntries();
+    const updatedList = entries.map((e) => (e.id === updated.id ? updated : e));
+    cachedEntries = updatedList;
+    AsyncStorage.setItem(STORAGE_KEYS.ENTRIES, JSON.stringify(updatedList)).catch(console.error);
+    return updatedList;
+  } catch (error) {
+    console.error('Error updating food entry:', error);
+    throw error;
+  }
+}
+
+export async function deleteFoodEntry(id: string): Promise<FoodEntry[]> {
+  try {
+    const entries = await getFoodEntries();
+    const updatedList = entries.filter((e) => e.id !== id);
+    cachedEntries = updatedList;
+    AsyncStorage.setItem(STORAGE_KEYS.ENTRIES, JSON.stringify(updatedList)).catch(console.error);
+    return updatedList;
+  } catch (error) {
+    console.error('Error deleting food entry:', error);
+    throw error;
+  }
+}
+
+export async function getUserProfile(): Promise<UserProfile> {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEYS.USER_PROFILE);
+    return raw ? JSON.parse(raw) : DEFAULT_PROFILE;
+  } catch {
+    return DEFAULT_PROFILE;
+  }
+}
+
+export async function saveUserProfile(profile: UserProfile): Promise<void> {
+  try {
+    await AsyncStorage.setItem(STORAGE_KEYS.USER_PROFILE, JSON.stringify(profile));
+  } catch (error) {
+    console.error('Error saving user profile:', error);
+  }
+}
+
+export async function hasCompletedOnboarding(): Promise<boolean> {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEYS.ONBOARDING_DONE);
+    return raw === 'true';
+  } catch {
+    return false;
+  }
+}
+
+export async function setOnboardingCompleted(status: boolean): Promise<void> {
+  try {
+    await AsyncStorage.setItem(STORAGE_KEYS.ONBOARDING_DONE, status ? 'true' : 'false');
+  } catch (error) {
+    console.error('Error setting onboarding status:', error);
+  }
+}
+
+const INITIAL_WEIGHT_LOGS = [
+  { id: 'w1', weightKg: 61.2, weightLbs: 135.0, date: '2025-06-15', timestamp: '2025-06-15T08:00:00Z', note: 'Starting weight' },
+  { id: 'w2', weightKg: 60.5, weightLbs: 133.5, date: '2025-07-10', timestamp: '2025-07-10T08:00:00Z', note: 'Consistent deficit' },
+  { id: 'w3', weightKg: 60.9, weightLbs: 134.2, date: '2025-08-05', timestamp: '2025-08-05T08:00:00Z', note: 'Post-holiday check' },
+  { id: 'w4', weightKg: 59.5, weightLbs: 131.2, date: '2025-09-09', timestamp: '2025-09-09T08:00:00Z', note: 'On track' },
+  { id: 'w5', weightKg: 58.5, weightLbs: 129.0, date: '2025-10-18', timestamp: '2025-10-18T08:00:00Z', note: 'New milestone' },
+  { id: 'w6', weightKg: 58.0, weightLbs: 128.0, date: '2025-11-20', timestamp: '2025-11-20T08:00:00Z', note: 'Target approaching' },
+];
+
+export async function getWeightLogs(): Promise<import('@/types/nutrition').WeightEntry[]> {
+  if (cachedWeightLogs) return cachedWeightLogs;
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEYS.WEIGHT_LOGS);
+    if (!raw) {
+      await AsyncStorage.setItem(STORAGE_KEYS.WEIGHT_LOGS, JSON.stringify(INITIAL_WEIGHT_LOGS));
+      cachedWeightLogs = INITIAL_WEIGHT_LOGS;
+      return INITIAL_WEIGHT_LOGS;
+    }
+    cachedWeightLogs = JSON.parse(raw);
+    return cachedWeightLogs!;
+  } catch (error) {
+    console.error('Error fetching weight logs:', error);
+    return INITIAL_WEIGHT_LOGS;
+  }
+}
+
+export async function addWeightLog(entry: {
+  weightKg: number;
+  weightLbs: number;
+  date: string;
+  note?: string;
+}): Promise<import('@/types/nutrition').WeightEntry[]> {
+  try {
+    const logs = await getWeightLogs();
+    const newEntry: import('@/types/nutrition').WeightEntry = {
+      id: `w_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      timestamp: new Date().toISOString(),
+      ...entry,
+    };
+    // Sort descending by date
+    const updated = [newEntry, ...logs.filter((l) => l.date !== entry.date)].sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+    );
+    cachedWeightLogs = updated;
+    AsyncStorage.setItem(STORAGE_KEYS.WEIGHT_LOGS, JSON.stringify(updated)).catch(console.error);
+    return updated;
+  } catch (error) {
+    console.error('Error saving weight log:', error);
+    throw error;
+  }
+}
+
+export async function deleteWeightLog(id: string): Promise<import('@/types/nutrition').WeightEntry[]> {
+  try {
+    const logs = await getWeightLogs();
+    const updated = logs.filter((l) => l.id !== id);
+    cachedWeightLogs = updated;
+    AsyncStorage.setItem(STORAGE_KEYS.WEIGHT_LOGS, JSON.stringify(updated)).catch(console.error);
+    return updated;
+  } catch (error) {
+    console.error('Error deleting weight log:', error);
+    throw error;
+  }
+}
+
+export const DEFAULT_ACCOUNT: import('@/types/nutrition').UserAccount = {
+  id: 'usr_default',
+  name: 'Aryan',
+  email: 'aryan@example.com',
+  memberSince: 'Aug 2025',
+  isLoggedIn: true,
+  tier: 'Pro',
+};
+
+export async function getUserAccount(): Promise<import('@/types/nutrition').UserAccount> {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEYS.ACCOUNT);
+    return raw ? JSON.parse(raw) : DEFAULT_ACCOUNT;
+  } catch {
+    return DEFAULT_ACCOUNT;
+  }
+}
+
+export async function saveUserAccount(account: import('@/types/nutrition').UserAccount): Promise<void> {
+  try {
+    await AsyncStorage.setItem(STORAGE_KEYS.ACCOUNT, JSON.stringify(account));
+  } catch (error) {
+    console.error('Error saving user account:', error);
+  }
+}
+
+export async function signInUser(email: string, name?: string): Promise<import('@/types/nutrition').UserAccount> {
+  const account: import('@/types/nutrition').UserAccount = {
+    id: `usr_${Date.now()}`,
+    name: name?.trim() || email.split('@')[0] || 'User',
+    email: email.trim().toLowerCase(),
+    memberSince: 'Today',
+    isLoggedIn: true,
+    tier: 'Pro',
+  };
+  await saveUserAccount(account);
+  return account;
+}
+
+export async function signOutUser(): Promise<import('@/types/nutrition').UserAccount> {
+  const account: import('@/types/nutrition').UserAccount = {
+    id: 'usr_guest',
+    name: 'Guest User',
+    email: '',
+    memberSince: 'Today',
+    isLoggedIn: false,
+    tier: 'Free',
+  };
+  await saveUserAccount(account);
+  return account;
+}
