@@ -56,6 +56,9 @@ export const MacroMiniCard = React.memo(function MacroMiniCard({
           {consumed}
           <Text style={styles.target}>/{target}g</Text>
         </Text>
+        <View style={styles.pctBadge}>
+          <Text style={styles.pctText}>{Math.round(progress * 100)}%</Text>
+        </View>
         <Text style={styles.sublabel}>{cfg.sub}</Text>
       </View>
 
@@ -131,8 +134,23 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '500',
     color: PALETTE[600],
-    marginTop: 2,
+    marginTop: 1,
     letterSpacing: 0.2,
+  },
+  pctBadge: {
+    backgroundColor: PALETTE[50],
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 8,
+    marginTop: 1,
+    borderWidth: 1,
+    borderColor: PALETTE[100],
+  },
+  pctText: {
+    fontFamily: FONTS.sans,
+    fontSize: 9,
+    fontWeight: '700',
+    color: PALETTE[700],
   },
   ringContainer: {
     width: 44,

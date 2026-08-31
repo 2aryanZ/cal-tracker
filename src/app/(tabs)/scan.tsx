@@ -21,9 +21,9 @@ import {
   Scan,
   QrCode,
   Tag,
-  Sparkles,
   SwitchCamera,
   Camera as CameraIcon,
+  Flame,
 } from 'lucide-react-native';
 import { analyzeFoodImage } from '@/services/aiFoodService';
 import { MealResultModal } from '@/components/MealResultModal';
@@ -169,8 +169,10 @@ export default function ScanScreen() {
         </TouchableOpacity>
 
         <View style={styles.logoCenter}>
-          <Sparkles size={16} color={PALETTE[200]} />
-          <Text style={styles.topTitle}>Cal tracker</Text>
+          <View style={styles.fitnessBadge}>
+            <Flame size={13} color="#10B981" fill="#10B981" />
+          </View>
+          <Text style={styles.topTitle}>Cal Tracker Vision</Text>
         </View>
 
         <TouchableOpacity style={styles.topBtn} onPress={toggleCameraFacing}>
@@ -338,7 +340,17 @@ const styles = StyleSheet.create({
   logoCenter: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
+  },
+  fitnessBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 7,
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.4)',
   },
   topTitle: {
     fontFamily: FONTS.serif,

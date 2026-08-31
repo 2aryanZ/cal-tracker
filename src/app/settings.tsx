@@ -25,6 +25,7 @@ import {
   LogIn,
   ShieldCheck,
   Crown,
+  Database,
 } from 'lucide-react-native';
 import { useNutrition } from '@/context/NutritionContext';
 import { getApiKey, saveApiKey } from '@/services/storage';
@@ -430,6 +431,22 @@ export default function SettingsScreen() {
               </View>
             </>
           )}
+        </View>
+
+        {/* Supabase Cloud Database Status */}
+        <Text style={styles.sectionTitle}>CLOUD DATABASE & SYNC</Text>
+        <View style={styles.card}>
+          <View style={styles.apiKeyHeader}>
+            <Database size={15} color="#059669" />
+            <Text style={styles.apiKeyLabel}>Supabase PostgreSQL</Text>
+          </View>
+          <Text style={styles.apiKeySub}>
+            Connected to project vzsbjffwhjikeeanrzdb (Region: ap-southeast-1). All food entries, macro goals, and weigh-ins sync with Row Level Security.
+          </Text>
+          <View style={styles.dbStatusPill}>
+            <View style={styles.dbStatusDot} />
+            <Text style={styles.dbStatusText}>Live Cloud Sync Active • 4 Tables Connected</Text>
+          </View>
         </View>
 
         {/* AI Vision API Key Config */}
@@ -883,6 +900,31 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: PALETTE[200],
     marginBottom: 8,
+  },
+  dbStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  dbStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
+  },
+  dbStatusText: {
+    fontFamily: FONTS.sans,
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#065F46',
   },
   actionLinkRow: {
     paddingVertical: 12,

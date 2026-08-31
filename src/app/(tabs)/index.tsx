@@ -10,7 +10,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Flame, Sparkles } from 'lucide-react-native';
+import { Flame, Droplet, Plus, Zap } from 'lucide-react-native';
 import { useNutrition } from '@/context/NutritionContext';
 import { CalorieRing } from '@/components/CalorieRing';
 import { MacroMiniCard } from '@/components/MacroMiniCard';
@@ -42,6 +42,8 @@ export default function HomeScreen() {
   const [sampleResult, setSampleResult] = useState<AiFoodDetectionResult | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<'all' | MealType>('all');
+  const [waterMl, setWaterMl] = useState(1750);
+  const waterTarget = goals.waterMl || 2500;
 
   // Pull-to-refresh handler
   const onRefresh = useCallback(async () => {
@@ -115,8 +117,10 @@ export default function HomeScreen() {
       {/* Top Header Bar */}
       <View style={styles.topBar}>
         <View style={styles.logoRow}>
-          <Sparkles size={18} color={PALETTE[950]} />
-          <Text style={styles.appTitle}>Cal tracker</Text>
+          <View style={styles.fitnessBadge}>
+            <Flame size={16} color="#10B981" fill="#10B981" />
+          </View>
+          <Text style={styles.appTitle}>Cal Tracker</Text>
         </View>
 
         <View style={styles.topRightRow}>
@@ -124,8 +128,8 @@ export default function HomeScreen() {
             style={styles.streakPill}
             onPress={() => router.push('/(tabs)/analytics')}
             activeOpacity={0.8}>
-            <Flame size={13} color={PALETTE[700]} fill={PALETTE[700]} />
-            <Text style={styles.streakCount}>{stats.currentStreak}</Text>
+            <Flame size={13} color="#F59E0B" fill="#F59E0B" />
+            <Text style={styles.streakCount}>{stats.currentStreak} Day Streak</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -211,6 +215,67 @@ export default function HomeScreen() {
             target={goals.fats}
             type="fats"
           />
+        </View>
+
+        {/* Daily Caloric Energy & Deficit Insight */}
+        <View style={styles.energyInsightCard}>
+          <View style={styles.energyInsightLeft}>
+            <View style={styles.energyIconBadge}>
+              <Zap size={14} color="#059669" />
+            </View>
+            <View>
+              <Text style={styles.energyTitle}>
+                {remaining.calories > 0
+                  ? `${remaining.calories} kcal remaining`
+                  : 'Energy Target Met! 🎯'}
+              </Text>
+              <Text style={styles.energySubtitle}>
+                {remaining.calories > 0
+                  ? 'Keep fueling clean to hit your metabolic daily deficit.'
+                  : 'Perfect energy balance locked in for the day.'}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Daily Hydration Quick-Log Card */}
+        <View style={styles.waterCard}>
+          <View style={styles.waterHeaderRow}>
+            <View style={styles.waterTitleRow}>
+              <Droplet size={16} color="#0284C7" fill="#0284C7" />
+              <Text style={styles.waterTitle}>Daily Hydration</Text>
+            </View>
+            <Text style={styles.waterAmountText}>
+              {(waterMl / 1000).toFixed(2)}L <Text style={styles.waterTargetText}>/ {(waterTarget / 1000).toFixed(1)}L</Text>
+            </Text>
+          </View>
+
+          <View style={styles.waterProgressTrack}>
+            <View
+              style={[
+                styles.waterProgressFill,
+                { width: `${Math.min(100, Math.round((waterMl / waterTarget) * 100))}%` },
+              ]}
+            />
+          </View>
+
+          <View style={styles.waterQuickBtnsRow}>
+            <TouchableOpacity
+              style={styles.waterQuickBtn}
+              onPress={() => setWaterMl((prev) => prev + 250)}
+              activeOpacity={0.8}>
+              <Plus size={12} color="#0284C7" />
+              <Text style={styles.waterQuickBtnText}>+250 ml (Glass)</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.waterQuickBtn}
+              onPress={() => setWaterMl((prev) => prev + 500)}
+              activeOpacity={0.8}>
+              <Plus size={12} color="#0284C7" />
+              <Text style={styles.waterQuickBtnText}>+500 ml (Bottle)</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Meal Category Filter Pills */}
@@ -522,5 +587,126 @@ const styles = StyleSheet.create({
   filterPillTextActive: {
     color: PALETTE[50],
     fontWeight: '700',
+  },
+  fitnessBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: '#ECFDF5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  energyInsightCard: {
+    backgroundColor: '#F0FDF4',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#DCFCE7',
+  },
+  energyInsightLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  energyIconBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: '#DCFCE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  energyTitle: {
+    fontFamily: FONTS.serif,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#065F46',
+  },
+  energySubtitle: {
+    fontFamily: FONTS.sans,
+    fontSize: 11,
+    color: '#047857',
+    marginTop: 1,
+  },
+  waterCard: {
+    backgroundColor: PALETTE.white,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: PALETTE[100],
+    shadowColor: PALETTE[950],
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  waterHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  waterTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  waterTitle: {
+    fontFamily: FONTS.serif,
+    fontSize: 13,
+    fontWeight: '700',
+    color: PALETTE[950],
+  },
+  waterAmountText: {
+    fontFamily: FONTS.serif,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0284C7',
+  },
+  waterTargetText: {
+    fontFamily: FONTS.sans,
+    fontSize: 11,
+    color: PALETTE[400],
+    fontWeight: '500',
+  },
+  waterProgressTrack: {
+    height: 6,
+    backgroundColor: '#F0F9FF',
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#E0F2FE',
+  },
+  waterProgressFill: {
+    height: '100%',
+    backgroundColor: '#0284C7',
+    borderRadius: 4,
+  },
+  waterQuickBtnsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  waterQuickBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: '#F0F9FF',
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+  },
+  waterQuickBtnText: {
+    fontFamily: FONTS.sans,
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#0369A1',
   },
 });

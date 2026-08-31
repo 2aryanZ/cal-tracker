@@ -9,7 +9,7 @@ import {
   Platform,
 } from 'react-native';
 import Svg, { Path, Circle, Line, Defs, LinearGradient, Stop } from 'react-native-svg';
-import { Flame, ArrowRight, Check, TrendingUp, TrendingDown, Plus, Trash2 } from 'lucide-react-native';
+import { Flame, ArrowRight, Check, TrendingUp, TrendingDown, Plus, Trash2, Target, Zap, Activity, Calendar } from 'lucide-react-native';
 import { useNutrition } from '@/context/NutritionContext';
 import { kgToLbs, lbsToKg } from '@/services/tdeeCalculator';
 import { getWeightLogs, addWeightLog, deleteWeightLog } from '@/services/storage';
@@ -341,6 +341,48 @@ export default function AnalyticsScreen() {
             <Text style={styles.motivationText}>
               Great consistency! You are {goalProgressPercent}% of the way to your target weight.
             </Text>
+          </View>
+        </View>
+
+        {/* Goal Milestone & Metabolic Forecast Card */}
+        <View style={styles.forecastCard}>
+          <View style={styles.forecastHeader}>
+            <View style={styles.forecastHeaderLeft}>
+              <Target size={16} color={PALETTE[950]} />
+              <Text style={styles.forecastTitle}>Goal Projection</Text>
+            </View>
+            <View style={styles.forecastPill}>
+              <Calendar size={11} color={PALETTE[700]} />
+              <Text style={styles.forecastPillText}>Estimated ~{Math.max(1, Math.round(Math.abs(currentWeightLbs - goalWeightLbs) / 1.2))} Weeks</Text>
+            </View>
+          </View>
+
+          <View style={styles.forecastGrid}>
+            <View style={styles.forecastItem}>
+              <View style={styles.forecastIconBox}>
+                <Zap size={14} color="#D97706" />
+              </View>
+              <Text style={styles.forecastVal}>{Math.round(10 * (userProfile.weightKg || 70) + 6.25 * (userProfile.heightCm || 175) - 5 * (userProfile.age || 25) + 5)} kcal</Text>
+              <Text style={styles.forecastLabel}>Basal Metabolic (BMR)</Text>
+            </View>
+
+            <View style={styles.forecastItem}>
+              <View style={styles.forecastIconBox}>
+                <Activity size={14} color="#059669" />
+              </View>
+              <Text style={styles.forecastVal}>{goals.calories} kcal</Text>
+              <Text style={styles.forecastLabel}>Daily Target Budget</Text>
+            </View>
+
+            <View style={styles.forecastItem}>
+              <View style={styles.forecastIconBox}>
+                <Flame size={14} color="#DC2626" fill="#DC2626" />
+              </View>
+              <Text style={styles.forecastVal}>
+                {userProfile.goal === 'fat_loss' ? '-500 kcal' : userProfile.goal === 'muscle_gain' ? '+350 kcal' : '±0 kcal'}
+              </Text>
+              <Text style={styles.forecastLabel}>Daily Energy Deficit</Text>
+            </View>
           </View>
         </View>
 
@@ -874,5 +916,89 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: PALETTE[600],
+  },
+  forecastCard: {
+    backgroundColor: PALETTE.white,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: PALETTE[100],
+    shadowColor: PALETTE[950],
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  forecastHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  forecastHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  forecastTitle: {
+    fontFamily: FONTS.serif,
+    fontSize: 14,
+    fontWeight: '700',
+    color: PALETTE[950],
+  },
+  forecastPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: PALETTE[50],
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: PALETTE[100],
+  },
+  forecastPillText: {
+    fontFamily: FONTS.sans,
+    fontSize: 10,
+    fontWeight: '700',
+    color: PALETTE[700],
+  },
+  forecastGrid: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  forecastItem: {
+    flex: 1,
+    backgroundColor: PALETTE[50],
+    borderRadius: 12,
+    padding: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: PALETTE[100],
+  },
+  forecastIconBox: {
+    width: 26,
+    height: 26,
+    borderRadius: 6,
+    backgroundColor: PALETTE.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+  forecastVal: {
+    fontFamily: FONTS.serif,
+    fontSize: 13,
+    fontWeight: '700',
+    color: PALETTE[950],
+    textAlign: 'center',
+  },
+  forecastLabel: {
+    fontFamily: FONTS.sans,
+    fontSize: 9,
+    fontWeight: '600',
+    color: PALETTE[600],
+    textAlign: 'center',
+    marginTop: 2,
   },
 });

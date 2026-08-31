@@ -101,6 +101,12 @@ export default function HistoryScreen() {
   const totalDayCarbs = dayEntries.reduce((sum, e) => sum + (Number(e.carbs) || 0), 0);
   const totalDayFats = dayEntries.reduce((sum, e) => sum + (Number(e.fats) || 0), 0);
 
+  const weeklyAvgCalories = React.useMemo(() => {
+    const total = dateStrip.reduce((sum, d) => sum + d.dayCal, 0);
+    const activeDays = dateStrip.filter((d) => d.dayCal > 0).length || 1;
+    return Math.round(total / activeDays);
+  }, [dateStrip]);
+
   const isGoalMet =
     totalDayCalories >= goals.calories * 0.85 && totalDayCalories <= goals.calories * 1.15;
 
@@ -271,6 +277,7 @@ export default function HistoryScreen() {
                     {totalDayCalories}{' '}
                     <Text style={styles.summaryGoal}>/ {goals.calories} kcal</Text>
                   </Text>
+                  <Text style={styles.weeklyAvgSub}>7-day average: {weeklyAvgCalories} kcal/day</Text>
                 </View>
 
                 <View
@@ -591,6 +598,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: PALETTE[950],
     marginTop: 2,
+  },
+  weeklyAvgSub: {
+    fontFamily: FONTS.sans,
+    fontSize: 11,
+    color: PALETTE[600],
+    marginTop: 2,
+    fontWeight: '500',
   },
   summaryGoal: {
     fontFamily: FONTS.sans,
