@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -32,6 +32,16 @@ export function WeightLogModal({
   const [weightKg, setWeightKg] = useState(String(Math.round((currentWeightKg || 78) * 10) / 10));
   const [date, setDate] = useState(getTodayDateString());
   const [note, setNote] = useState('Morning weigh-in');
+
+  useEffect(() => {
+    if (visible) {
+      setUnit(initialUnit);
+      setWeightLbs(String(kgToLbs(currentWeightKg || 78)));
+      setWeightKg(String(Math.round((currentWeightKg || 78) * 10) / 10));
+      setDate(getTodayDateString());
+    }
+  }, [visible, currentWeightKg, initialUnit]);
+
 
 
   const handleUnitToggle = (newUnit: 'lbs' | 'kg') => {

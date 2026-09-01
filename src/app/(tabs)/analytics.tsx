@@ -12,7 +12,8 @@ import Svg, { Path, Circle, Line, Defs, LinearGradient, Stop } from 'react-nativ
 import { Flame, ArrowRight, Check, TrendingUp, TrendingDown, Plus, Trash2, Target, Zap, Activity, Calendar } from 'lucide-react-native';
 import { useNutrition } from '@/context/NutritionContext';
 import { kgToLbs, lbsToKg } from '@/services/tdeeCalculator';
-import { getWeightLogs, addWeightLog, deleteWeightLog } from '@/services/storage';
+import { getWeightLogs, addWeightLog, deleteWeightLog, getTodayDateString } from '@/services/storage';
+
 import { WeightEntry } from '@/types/nutrition';
 import { WeightLogModal } from '@/components/WeightLogModal';
 import { PALETTE, FONTS } from '@/constants/theme';
@@ -30,18 +31,15 @@ export default function AnalyticsScreen() {
   useEffect(() => {
     getWeightLogs().then((logs) => {
       setWeightLogs(logs);
-      if (logs.length > 0) {
-        setSelectedPointIdx(0);
-      }
     });
   }, []);
 
   const isKg = unit === 'kg';
   const unitLabel = isKg ? 'kg' : 'lbs';
 
-  const currentWeightKg = userProfile.weightKg || (weightLogs[0]?.weightKg ?? 60);
+  const currentWeightKg = userProfile.weightKg || (weightLogs[0]?.weightKg ?? 78);
   const currentWeightLbs = Math.round(kgToLbs(currentWeightKg) * 10) / 10;
-  const goalWeightKg = userProfile.targetWeightKg || 58;
+  const goalWeightKg = userProfile.targetWeightKg || 74;
   const goalWeightLbs = Math.round(kgToLbs(goalWeightKg) * 10) / 10;
 
   const displayedCurrentWeight = isKg ? currentWeightKg : currentWeightLbs;
@@ -73,7 +71,7 @@ export default function AnalyticsScreen() {
     const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
 
     const subset = chronologicalLogs.filter((l) => new Date(l.date) >= cutoff);
-    return subset.length >= 2 ? subset : chronologicalLogs;
+    return subset.length >= 1 ? subset : chronologicalLogs;
   }, [chronologicalLogs, timeRange]);
 
   // Starting weight & total delta in active unit
@@ -86,7 +84,7 @@ export default function AnalyticsScreen() {
   const goalProgressPercent = Math.min(Math.round((progressMade / goalDeltaTotal) * 100), 100);
 
   // BMI Calculation: weight (kg) / [height (m)]^2
-  const heightM = (userProfile.heightCm || 175) / 100;
+  const heightM = (userProfile.heightCm || 178) / 100;
   const bmiValue = Math.round((currentWeightKg / (heightM * heightM)) * 10) / 10;
   const bmiCategory =
     bmiValue < 18.5 ? 'Underweight' : bmiValue < 25 ? 'Normal BMI' : bmiValue < 30 ? 'Overweight' : 'Obese';
@@ -107,10 +105,13 @@ export default function AnalyticsScreen() {
     const count = filteredLogs.length;
     return filteredLogs.map((log, idx) => {
       const val = getLogWeight(log);
-      const x = paddingX + (idx / Math.max(count - 1, 1)) * (chartWidth - paddingX * 2);
-      const normalizedY = (val - minW) / rangeW;
+      const x = count === 1 ? chartWidth / 2 : paddingX + (idx / Math.max(count - 1, 1)) * (chartWidth - paddingX * 2);
+      const normalizedY = count === 1 ? 0.5 : (val - minW) / rangeW;
       const y = chartHeight - paddingY - normalizedY * (chartHeight - paddingY * 2);
-      const dateLabel = new Date(`${log.date}T00:00:00`).toLocaleDateString('en-US', {
+
+      const [year, month, day] = log.date.split('-').map(Number);
+      const dObj = new Date(year, month - 1, day);
+      const dateLabel = dObj.toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
       });
@@ -131,7 +132,11 @@ export default function AnalyticsScreen() {
     return path;
   }, [chartData]);
 
-  const activePoint = chartData[selectedPointIdx ?? chartData.length - 1] || chartData[chartData.length - 1];
+  const activePoint =
+    selectedPointIdx !== null && chartData[selectedPointIdx]
+      ? chartData[selectedPointIdx]
+      : chartData[chartData.length - 1] || { val: displayedCurrentWeight, dateLabel: 'Today' };
+
 
   const handleAddWeight = async (data: {
     weightKg: number;
@@ -268,7 +273,7 @@ export default function AnalyticsScreen() {
                 handleAddWeight({
                   weightKg: isKg ? nextVal : lbsToKg(nextVal),
                   weightLbs: isKg ? kgToLbs(nextVal) : nextVal,
-                  date: new Date().toISOString().split('T')[0],
+                  date: getTodayDateString(),
                   note: `Quick -${delta} ${unitLabel} update`,
                 });
               }}>
@@ -284,12 +289,13 @@ export default function AnalyticsScreen() {
                 handleAddWeight({
                   weightKg: isKg ? nextVal : lbsToKg(nextVal),
                   weightLbs: isKg ? kgToLbs(nextVal) : nextVal,
-                  date: new Date().toISOString().split('T')[0],
+                  date: getTodayDateString(),
                   note: `Quick +${delta} ${unitLabel} update`,
                 });
               }}>
               <Text style={styles.rapidAdjustBtnText}>+{isKg ? '0.2 kg' : '0.5 lbs'}</Text>
             </TouchableOpacity>
+
 
             <TouchableOpacity
               style={[styles.rapidAdjustBtn, styles.rapidAdjustBtnCustom]}

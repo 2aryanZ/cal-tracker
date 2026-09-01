@@ -383,31 +383,59 @@ export async function setOnboardingCompleted(status: boolean): Promise<void> {
   }
 }
 
-const INITIAL_WEIGHT_LOGS = [
-  { id: 'w1', weightKg: 61.2, weightLbs: 135.0, date: '2025-06-15', timestamp: '2025-06-15T08:00:00Z', note: 'Starting weight' },
-  { id: 'w2', weightKg: 60.5, weightLbs: 133.5, date: '2025-07-10', timestamp: '2025-07-10T08:00:00Z', note: 'Consistent deficit' },
-  { id: 'w3', weightKg: 60.9, weightLbs: 134.2, date: '2025-08-05', timestamp: '2025-08-05T08:00:00Z', note: 'Post-holiday check' },
-  { id: 'w4', weightKg: 59.5, weightLbs: 131.2, date: '2025-09-09', timestamp: '2025-09-09T08:00:00Z', note: 'On track' },
-  { id: 'w5', weightKg: 58.5, weightLbs: 129.0, date: '2025-10-18', timestamp: '2025-10-18T08:00:00Z', note: 'New milestone' },
-  { id: 'w6', weightKg: 58.0, weightLbs: 128.0, date: '2025-11-20', timestamp: '2025-11-20T08:00:00Z', note: 'Target approaching' },
-];
+export function generateDefaultWeightLogs(): import('@/types/nutrition').WeightEntry[] {
+  const today = new Date();
+  
+  const formatDateOffset = (daysAgo: number) => {
+    const d = new Date(today);
+    d.setDate(today.getDate() - daysAgo);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  return [
+    {
+      id: 'w_today',
+      weightKg: 78.0,
+      weightLbs: 172.0,
+      date: formatDateOffset(0), // Today (e.g. 2026-09-01)
+      timestamp: new Date().toISOString(),
+      note: 'Starting weigh-in',
+    },
+  ];
+}
 
 export async function getWeightLogs(): Promise<import('@/types/nutrition').WeightEntry[]> {
   if (cachedWeightLogs) return cachedWeightLogs;
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEYS.WEIGHT_LOGS);
     if (!raw) {
-      await AsyncStorage.setItem(STORAGE_KEYS.WEIGHT_LOGS, JSON.stringify(INITIAL_WEIGHT_LOGS));
-      cachedWeightLogs = INITIAL_WEIGHT_LOGS;
-      return INITIAL_WEIGHT_LOGS;
+      const initial = generateDefaultWeightLogs();
+      await AsyncStorage.setItem(STORAGE_KEYS.WEIGHT_LOGS, JSON.stringify(initial));
+      cachedWeightLogs = initial;
+      return initial;
     }
-    cachedWeightLogs = JSON.parse(raw);
+    const parsed: import('@/types/nutrition').WeightEntry[] = JSON.parse(raw);
+
+    // Auto-migrate legacy 2025 test dates if detected
+    const hasOutdated2025Dates = parsed.some((l) => l.date && l.date.startsWith('2025-'));
+    if (hasOutdated2025Dates) {
+      const freshLogs = generateDefaultWeightLogs();
+      await AsyncStorage.setItem(STORAGE_KEYS.WEIGHT_LOGS, JSON.stringify(freshLogs));
+      cachedWeightLogs = freshLogs;
+      return freshLogs;
+    }
+
+    cachedWeightLogs = parsed;
     return cachedWeightLogs!;
   } catch (error) {
     console.error('Error fetching weight logs:', error);
-    return INITIAL_WEIGHT_LOGS;
+    return generateDefaultWeightLogs();
   }
 }
+
 
 export async function addWeightLog(entry: {
   weightKg: number;
