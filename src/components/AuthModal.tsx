@@ -24,7 +24,7 @@ import { PALETTE, FONTS } from '@/constants/theme';
 interface AuthModalProps {
   visible: boolean;
   onClose: () => void;
-  onSignIn: (email: string, name?: string) => void;
+  onSignIn: (email: string, name?: string, password?: string) => void | Promise<void>;
   initialStep?: 1 | 2 | 3;
 }
 
@@ -36,6 +36,7 @@ export function AuthModal({
 }: AuthModalProps) {
   const [step, setStep] = useState<1 | 2 | 3>(initialStep);
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleConnect = async () => {
@@ -46,7 +47,7 @@ export function AuthModal({
 
     setIsSubmitting(true);
     try {
-      await onSignIn(email, email.split('@')[0]);
+      await onSignIn(email, email.split('@')[0], password || undefined);
       onClose();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Auth failed';
@@ -55,6 +56,7 @@ export function AuthModal({
       setIsSubmitting(false);
     }
   };
+
 
   const handleSocialSignIn = async (provider: 'google' | 'apple' | 'demo') => {
     setIsSubmitting(true);
@@ -228,8 +230,22 @@ export function AuthModal({
                   />
                 </View>
 
+                {/* Password Input Field */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabelText}>Password (Optional / Direct Auth)</Text>
+                  <TextInput
+                    value={password}
+                    onChangeText={setPassword}
+                    placeholder="Leave empty for instant magic link"
+                    placeholderTextColor={PALETTE[400]}
+                    secureTextEntry
+                    autoCapitalize="none"
+                    style={styles.emailTextInput}
+                  />
+                </View>
+
                 <Text style={styles.helperText}>
-                  We will send you an e-mail with a login link.
+                  Instant multi-device cloud sync with Supabase PostgreSQL.
                 </Text>
 
                 {/* Primary Connect Button */}
@@ -244,6 +260,7 @@ export function AuthModal({
                     <Text style={styles.connectBtnText}>Connect with Supabase</Text>
                   )}
                 </TouchableOpacity>
+
 
                 {/* "──── Or ────" Divider */}
                 <View style={styles.orDividerRow}>

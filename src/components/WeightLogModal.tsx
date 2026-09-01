@@ -16,6 +16,7 @@ interface WeightLogModalProps {
   visible: boolean;
   onClose: () => void;
   currentWeightKg: number;
+  initialUnit?: 'lbs' | 'kg';
   onSave: (data: { weightKg: number; weightLbs: number; date: string; note?: string }) => void;
 }
 
@@ -23,13 +24,15 @@ export function WeightLogModal({
   visible,
   onClose,
   currentWeightKg,
+  initialUnit = 'kg',
   onSave,
 }: WeightLogModalProps) {
-  const [unit, setUnit] = useState<'lbs' | 'kg'>('lbs');
+  const [unit, setUnit] = useState<'lbs' | 'kg'>(initialUnit);
   const [weightLbs, setWeightLbs] = useState(String(kgToLbs(currentWeightKg || 78)));
   const [weightKg, setWeightKg] = useState(String(Math.round((currentWeightKg || 78) * 10) / 10));
   const [date, setDate] = useState(getTodayDateString());
   const [note, setNote] = useState('Morning weigh-in');
+
 
   const handleUnitToggle = (newUnit: 'lbs' | 'kg') => {
     if (newUnit === unit) return;

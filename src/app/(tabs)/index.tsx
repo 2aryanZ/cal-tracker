@@ -31,11 +31,14 @@ export default function HomeScreen() {
     stats,
     consumed,
     remaining,
+    waterMl,
+    logWater,
     logMeal,
     editMeal,
     removeMeal,
     refreshData,
   } = useNutrition();
+
 
   const [modalVisible, setModalVisible] = useState(false);
   const [activeMealType, setActiveMealType] = useState<MealType>('lunch');
@@ -43,8 +46,7 @@ export default function HomeScreen() {
   const [sampleResult, setSampleResult] = useState<AiFoodDetectionResult | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<'all' | MealType>('all');
-  const [waterMl, setWaterMl] = useState(1750);
-  const waterTarget = goals.waterMl || 2500;
+  const waterTarget = goals.waterMl || 2000;
 
   // Pull-to-refresh handler
   const onRefresh = useCallback(async () => {
@@ -268,10 +270,7 @@ export default function HomeScreen() {
           <View style={styles.waterQuickBtnsRow}>
             <TouchableOpacity
               style={styles.waterQuickBtn}
-              onPress={() => {
-                triggerLightImpact();
-                setWaterMl((prev) => prev + 250);
-              }}
+              onPress={() => logWater(250)}
               activeOpacity={0.8}>
               <Plus size={12} color="#0284C7" />
               <Text style={styles.waterQuickBtnText}>+250 ml (Glass)</Text>
@@ -279,15 +278,20 @@ export default function HomeScreen() {
 
             <TouchableOpacity
               style={styles.waterQuickBtn}
-              onPress={() => {
-                triggerLightImpact();
-                setWaterMl((prev) => prev + 500);
-              }}
+              onPress={() => logWater(500)}
               activeOpacity={0.8}>
               <Plus size={12} color="#0284C7" />
               <Text style={styles.waterQuickBtnText}>+500 ml (Bottle)</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.waterQuickBtn, { flex: 0.65, backgroundColor: 'rgba(2, 132, 199, 0.08)' }]}
+              onPress={() => logWater(-250)}
+              activeOpacity={0.8}>
+              <Text style={[styles.waterQuickBtnText, { color: '#0284C7' }]}>-250 ml</Text>
+            </TouchableOpacity>
           </View>
+
         </View>
 
         {/* Meal Category Filter Pills */}

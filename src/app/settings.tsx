@@ -26,7 +26,10 @@ import {
   ShieldCheck,
   Crown,
   Database,
+  Droplet,
+  RefreshCw,
 } from 'lucide-react-native';
+
 import { useNutrition } from '@/context/NutritionContext';
 import { getApiKey, saveApiKey } from '@/services/storage';
 import { sendInstantStreakCelebration, requestNotificationPermissions } from '@/services/notificationService';
@@ -43,17 +46,17 @@ const DIET_PRESETS: { name: string; desc: string; goals: MacroTargets }[] = [
   {
     name: 'Fat Loss (Cut)',
     desc: 'Caloric deficit + high protein',
-    goals: { calories: 1850, protein: 160, carbs: 140, fats: 55, waterMl: 3000 },
+    goals: { calories: 1850, protein: 160, carbs: 140, fats: 55, waterMl: 2500 },
   },
   {
     name: 'Balanced Fitness',
     desc: 'Healthy maintenance ratio',
-    goals: { calories: 2200, protein: 150, carbs: 220, fats: 65, waterMl: 2500 },
+    goals: { calories: 2200, protein: 150, carbs: 220, fats: 65, waterMl: 2000 },
   },
   {
     name: 'Low Carb / Keto',
     desc: 'High fat + very low carbs',
-    goals: { calories: 2000, protein: 140, carbs: 35, fats: 140, waterMl: 3000 },
+    goals: { calories: 2000, protein: 140, carbs: 35, fats: 140, waterMl: 2500 },
   },
 ];
 
@@ -69,6 +72,8 @@ export default function SettingsScreen() {
     userAccount,
     signIn,
     signOut,
+    syncCloudNow,
+    isSyncing,
     setOnboardingVisible,
     triggerManualReward,
     showToast,
@@ -79,6 +84,7 @@ export default function SettingsScreen() {
   const [protein, setProtein] = useState(String(goals.protein));
   const [carbs, setCarbs] = useState(String(goals.carbs));
   const [fats, setFats] = useState(String(goals.fats));
+  const [waterTargetInput, setWaterTargetInput] = useState(String(goals.waterMl || 2000));
 
   // Notification state
   const [notifs, setNotifs] = useState<NotificationSettings>(notificationSettings);
@@ -98,7 +104,8 @@ export default function SettingsScreen() {
     setProtein(String(preset.goals.protein));
     setCarbs(String(preset.goals.carbs));
     setFats(String(preset.goals.fats));
-    showToast('Preset Loaded', `${preset.name} (${preset.goals.calories} kcal)`, 'sparkles');
+    setWaterTargetInput(String(preset.goals.waterMl || 2000));
+    showToast('Preset Loaded', `${preset.name} (${preset.goals.calories} kcal • ${((preset.goals.waterMl || 2000) / 1000).toFixed(1)}L Water)`, 'sparkles');
   };
 
   const handleSaveAll = async () => {
@@ -107,6 +114,7 @@ export default function SettingsScreen() {
       protein: Number(protein) || 150,
       carbs: Number(carbs) || 220,
       fats: Number(fats) || 65,
+      waterMl: Number(waterTargetInput) || 2000,
     };
 
     await updateGoals(updatedGoals);
@@ -118,6 +126,7 @@ export default function SettingsScreen() {
       router.back();
     }, 400);
   };
+
 
   const handleSignOutConfirm = () => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out of Cal tracker?', [
@@ -328,7 +337,7 @@ export default function SettingsScreen() {
             </View>
           </View>
 
-          <View style={[styles.inputRow, { borderBottomWidth: 0 }]}>
+          <View style={styles.inputRow}>
             <View style={styles.inputLabelGroup}>
               <View style={[styles.dot, { backgroundColor: PALETTE[400] }]} />
               <Text style={styles.inputLabel}>Fats Target</Text>
@@ -341,6 +350,22 @@ export default function SettingsScreen() {
                 style={styles.numberInput}
               />
               <Text style={styles.unitText}>g</Text>
+            </View>
+          </View>
+
+          <View style={[styles.inputRow, { borderBottomWidth: 0 }]}>
+            <View style={styles.inputLabelGroup}>
+              <Droplet size={15} color="#0284C7" fill="#0284C7" />
+              <Text style={styles.inputLabel}>Water Target</Text>
+            </View>
+            <View style={styles.inputValContainer}>
+              <TextInput
+                value={waterTargetInput}
+                onChangeText={setWaterTargetInput}
+                keyboardType="numeric"
+                style={styles.numberInput}
+              />
+              <Text style={styles.unitText}>ml ({(Number(waterTargetInput || 0) / 1000).toFixed(1)}L)</Text>
             </View>
           </View>
         </View>
@@ -434,20 +459,32 @@ export default function SettingsScreen() {
         </View>
 
         {/* Supabase Cloud Database Status */}
-        <Text style={styles.sectionTitle}>CLOUD DATABASE & SYNC</Text>
+        <Text style={styles.sectionTitle}>CLOUD DATABASE & MULTI-DEVICE SYNC</Text>
         <View style={styles.card}>
           <View style={styles.apiKeyHeader}>
             <Database size={15} color="#059669" />
-            <Text style={styles.apiKeyLabel}>Supabase PostgreSQL</Text>
+            <Text style={styles.apiKeyLabel}>Supabase PostgreSQL Database</Text>
           </View>
           <Text style={styles.apiKeySub}>
-            Connected to project vzsbjffwhjikeeanrzdb (Region: ap-southeast-1). All food entries, macro goals, and weigh-ins sync with Row Level Security.
+            Connected to project vzsbjffwhjikeeanrzdb. All meals, macro goals, water intake, and weight logs sync securely with Row Level Security across all your devices.
           </Text>
           <View style={styles.dbStatusPill}>
             <View style={styles.dbStatusDot} />
-            <Text style={styles.dbStatusText}>Live Cloud Sync Active • 4 Tables Connected</Text>
+            <Text style={styles.dbStatusText}>Live Cloud Sync Active • 5 Tables Connected</Text>
           </View>
+
+          <TouchableOpacity
+            style={[styles.recalcBtn, { marginTop: 14, backgroundColor: PALETTE[950] }]}
+            onPress={syncCloudNow}
+            disabled={isSyncing}
+            activeOpacity={0.85}>
+            <RefreshCw size={14} color={PALETTE[50]} />
+            <Text style={styles.recalcBtnText}>
+              {isSyncing ? 'Syncing with Supabase...' : 'Sync Now with Cloud'}
+            </Text>
+          </TouchableOpacity>
         </View>
+
 
         {/* AI Vision API Key Config */}
         <Text style={styles.sectionTitle}>GEMINI VISION API KEY</Text>
@@ -513,10 +550,11 @@ export default function SettingsScreen() {
       <AuthModal
         visible={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
-        onSignIn={(email, name) => {
-          signIn(email, name);
+        onSignIn={(email, name, password) => {
+          signIn(email, name, password);
         }}
       />
+
     </SafeAreaView>
   );
 }

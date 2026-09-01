@@ -28,12 +28,13 @@ create table if not exists public.macro_targets (
   protein integer default 150,
   carbs integer default 220,
   fats integer default 65,
+  water_ml integer default 2000,
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
 -- 3. FOOD ENTRIES TABLE
 create table if not exists public.food_entries (
-  id uuid default uuid_generate_v4() primary key,
+  id text primary key,
   user_id uuid references auth.users on delete cascade,
   name text not null,
   meal_type text not null,
@@ -49,11 +50,21 @@ create table if not exists public.food_entries (
 
 -- 4. WEIGHT LOGS TABLE
 create table if not exists public.weight_logs (
-  id uuid default uuid_generate_v4() primary key,
+  id text primary key,
   user_id uuid references auth.users on delete cascade,
   weight numeric not null,
   date_str text not null,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- 5. DAILY WATER LOGS TABLE
+create table if not exists public.water_logs (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references auth.users on delete cascade,
+  date_str text not null,
+  water_ml integer not null default 0,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  constraint unique_user_water_date unique (user_id, date_str)
 );
 
 -- ==============================================================================
@@ -64,6 +75,7 @@ alter table public.user_profiles enable row level security;
 alter table public.macro_targets enable row level security;
 alter table public.food_entries enable row level security;
 alter table public.weight_logs enable row level security;
+alter table public.water_logs enable row level security;
 
 -- Profiles: Users can view and update their own profile
 create policy "Users can view own profile"
@@ -107,4 +119,9 @@ create policy "Users can delete own food entries"
 -- Weight Logs: Users can manage their own weight logs
 create policy "Users can manage own weight logs"
   on public.weight_logs for all
+  using (auth.uid() = user_id);
+
+-- Water Logs: Users can manage their own water logs
+create policy "Users can manage own water logs"
+  on public.water_logs for all
   using (auth.uid() = user_id);

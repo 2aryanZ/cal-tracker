@@ -31,6 +31,11 @@ import {
   saveUserAccount,
   signInUser,
   signOutUser,
+  getWaterLogs,
+  saveWaterForDate,
+  setAllWaterLogs,
+  setAllFoodEntries,
+  getWeightLogs,
   DEFAULT_GOALS,
   DEFAULT_STATS,
   DEFAULT_NOTIFICATIONS,
@@ -38,7 +43,18 @@ import {
   DEFAULT_ACCOUNT,
 } from '@/services/storage';
 import { scheduleMealReminders, sendInstantStreakCelebration } from '@/services/notificationService';
-import { supabaseSignUp, supabaseSignOut, supabaseSyncFoodEntry } from '@/services/supabase';
+import {
+  supabaseSignUp,
+  supabaseSignOut,
+  supabaseSyncFoodEntry,
+  supabaseDeleteFoodEntry,
+  supabaseSyncWaterLog,
+  supabaseSyncMacroTargets,
+  supabaseSyncUserProfile,
+  supabaseFetchAllUserData,
+  supabasePushLocalData,
+} from '@/services/supabase';
+
 import { playGoalChime } from '@/services/soundService';
 import { triggerGoalCelebrationHaptic, triggerSuccessFeedback, triggerLightImpact } from '@/services/hapticsService';
 
@@ -60,6 +76,8 @@ interface NutritionContextType {
   userAccount: UserAccount;
   notificationSettings: NotificationSettings;
   dailySummary: DailySummary;
+  waterMl: number;
+  waterLogs: Record<string, number>;
   consumed: {
     calories: number;
     protein: number;
@@ -73,6 +91,7 @@ interface NutritionContextType {
     fats: number;
   };
   isLoading: boolean;
+  isSyncing: boolean;
   rewardState: RewardState;
   toastNotification: ToastNotification | null;
   onboardingVisible: boolean;
@@ -80,12 +99,15 @@ interface NutritionContextType {
   logMeal: (meal: Omit<FoodEntry, 'id' | 'timestamp' | 'date'> & { date?: string }) => Promise<void>;
   editMeal: (entry: FoodEntry) => Promise<void>;
   removeMeal: (id: string) => Promise<void>;
+  logWater: (amountMl: number, date?: string) => Promise<void>;
+  setWater: (totalMl: number, date?: string) => Promise<void>;
   updateGoals: (goals: MacroTargets) => Promise<void>;
   saveProfile: (profile: UserProfile, newGoals: MacroTargets) => Promise<void>;
   updateNotifications: (settings: NotificationSettings) => Promise<void>;
-  signIn: (email: string, name?: string) => Promise<void>;
+  signIn: (email: string, name?: string, password?: string) => Promise<void>;
   signOut: () => Promise<void>;
   updateAccount: (account: Partial<UserAccount>) => Promise<void>;
+  syncCloudNow: () => Promise<void>;
   dismissReward: () => void;
   triggerManualReward: () => void;
   showToast: (title: string, message: string, icon?: string) => void;
@@ -103,7 +125,9 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
   const [userProfile, setUserProfile] = useState<UserProfile>(DEFAULT_PROFILE);
   const [userAccount, setUserAccount] = useState<UserAccount>(DEFAULT_ACCOUNT);
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(DEFAULT_NOTIFICATIONS);
+  const [waterLogs, setWaterLogsState] = useState<Record<string, number>>({});
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [onboardingVisible, setOnboardingVisible] = useState<boolean>(false);
   const [toastNotification, setToastNotification] = useState<ToastNotification | null>(null);
 
@@ -126,6 +150,7 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
         storedNotifs,
         storedProfile,
         storedAccount,
+        storedWaterLogs,
         onboardingDone,
       ] = await Promise.all([
         getFoodEntries(),
@@ -134,6 +159,7 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
         getNotificationSettings(),
         getUserProfile(),
         getUserAccount(),
+        getWaterLogs(),
         hasCompletedOnboarding(),
       ]);
 
@@ -143,6 +169,7 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
       setNotificationSettings(storedNotifs);
       setUserProfile(storedProfile);
       setUserAccount(storedAccount);
+      setWaterLogsState(storedWaterLogs);
 
       if (!onboardingDone) {
         setOnboardingVisible(true);
@@ -150,6 +177,11 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
 
       // Schedule notifications in background
       scheduleMealReminders(storedNotifs);
+
+      // If user is signed in with Supabase, pull cloud updates in background
+      if (storedAccount.isLoggedIn && storedAccount.email) {
+        syncCloudBackground(storedEntries, storedGoals, storedProfile, storedWaterLogs);
+      }
     } catch (err) {
       console.error('Failed to load nutrition state:', err);
     } finally {
@@ -157,9 +189,63 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Background Cloud Sync to keep data updated across devices
+  const syncCloudBackground = async (
+    currentEntries: FoodEntry[],
+    currentGoals: MacroTargets,
+    currentProfile: UserProfile,
+    currentWaterLogs: Record<string, number>
+  ) => {
+    try {
+      const cloudData = await supabaseFetchAllUserData();
+      if (!cloudData) return;
+
+      // Merge food entries (combine unique IDs)
+      if (cloudData.foodEntries && cloudData.foodEntries.length > 0) {
+        const entryMap = new Map<string, FoodEntry>();
+        cloudData.foodEntries.forEach((e) => entryMap.set(e.id, e));
+        currentEntries.forEach((e) => {
+          if (!entryMap.has(e.id)) entryMap.set(e.id, e);
+        });
+        const mergedEntries = Array.from(entryMap.values()).sort(
+          (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        );
+        setEntries(mergedEntries);
+        setAllFoodEntries(mergedEntries);
+      }
+
+      // Merge water logs
+      if (cloudData.waterLogs && Object.keys(cloudData.waterLogs).length > 0) {
+        const mergedWater = { ...currentWaterLogs, ...cloudData.waterLogs };
+        setWaterLogsState(mergedWater);
+        setAllWaterLogs(mergedWater);
+      }
+
+      // Merge goals & profile if present in cloud
+      if (cloudData.goals) {
+        setGoals(cloudData.goals);
+        saveMacroGoals(cloudData.goals);
+      }
+      if (cloudData.profile) {
+        setUserProfile(cloudData.profile);
+        saveUserProfile(cloudData.profile);
+      }
+    } catch (err) {
+      console.warn('Background sync notice:', err);
+    }
+  };
+
+  // Initial mount data load
   useEffect(() => {
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+
+  // Compute water consumed for currently selected date
+  const waterMl = useMemo(() => {
+    return waterLogs[selectedDate] ?? (selectedDate === getTodayDateString() ? 1500 : 0);
+  }, [waterLogs, selectedDate]);
 
   // Filter entries for active selected date
   const activeDateEntries = useMemo(() => {
@@ -205,15 +291,88 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
     };
   }, [selectedDate, consumed, goals, activeDateEntries]);
 
-  // Authentication Handlers
-  const signIn = async (email: string, name?: string) => {
-    // 1. Sign up/in directly with Supabase Auth
-    const res = await supabaseSignUp(email, undefined, name);
-    const account: UserAccount = res.user || (await signInUser(email, name));
+  // Water Tracking Handlers
+  const logWater = async (amountMl: number, date?: string) => {
+    const targetDate = date || selectedDate;
+    const current = waterLogs[targetDate] ?? (targetDate === getTodayDateString() ? 1500 : 0);
+    const newTotal = Math.max(0, current + amountMl);
+    const updated = await saveWaterForDate(targetDate, newTotal);
+    setWaterLogsState(updated);
 
-    setUserAccount(account);
-    await saveUserAccount(account);
-    showToast('Welcome back! 👋', `Signed in as ${account.name} (${account.email})`, 'sparkles');
+    // Sync water log to Supabase in background
+    supabaseSyncWaterLog(targetDate, newTotal);
+
+    triggerLightImpact();
+    showToast(
+      'Water Intake Logged 💧',
+      `+${amountMl} ml logged (${(newTotal / 1000).toFixed(2)}L / ${((goals.waterMl || 2000) / 1000).toFixed(1)}L)`,
+      'droplet'
+    );
+  };
+
+  const setWater = async (totalMl: number, date?: string) => {
+    const targetDate = date || selectedDate;
+    const newTotal = Math.max(0, Math.round(totalMl));
+    const updated = await saveWaterForDate(targetDate, newTotal);
+    setWaterLogsState(updated);
+
+    // Sync water log to Supabase
+    supabaseSyncWaterLog(targetDate, newTotal);
+
+    triggerSuccessFeedback();
+    showToast('Hydration Updated 💧', `Set to ${(newTotal / 1000).toFixed(2)}L for ${targetDate}`, 'droplet');
+  };
+
+  // Authentication Handlers
+  const signIn = async (email: string, name?: string, password?: string) => {
+    setIsSyncing(true);
+    try {
+      // 1. Sign up/in directly with Supabase Auth
+      const res = await supabaseSignUp(email, password, name);
+      const account: UserAccount = res.user || (await signInUser(email, name));
+
+      setUserAccount(account);
+      await saveUserAccount(account);
+
+      // 2. Push current local data up to Supabase
+      const currentWeights = await getWeightLogs();
+      await supabasePushLocalData({
+        entries,
+        weights: currentWeights,
+        waterLogs,
+        goals,
+        profile: userProfile,
+      });
+
+      // 3. Pull all merged cloud history down
+      const cloudData = await supabaseFetchAllUserData();
+      if (cloudData) {
+        if (cloudData.foodEntries && cloudData.foodEntries.length > 0) {
+          setEntries(cloudData.foodEntries);
+          await setAllFoodEntries(cloudData.foodEntries);
+        }
+        if (cloudData.waterLogs) {
+          const mergedWater = { ...waterLogs, ...cloudData.waterLogs };
+          setWaterLogsState(mergedWater);
+          await setAllWaterLogs(mergedWater);
+        }
+        if (cloudData.goals) {
+          setGoals(cloudData.goals);
+          await saveMacroGoals(cloudData.goals);
+        }
+        if (cloudData.profile) {
+          setUserProfile(cloudData.profile);
+          await saveUserProfile(cloudData.profile);
+        }
+      }
+
+      showToast('Welcome back! 👋', `Multi-device cloud sync active for ${account.name}`, 'sparkles');
+    } catch (err) {
+      console.error('Sign in error:', err);
+      showToast('Sign In Notice', 'Signed in locally. Cloud sync will retry.', 'sparkles');
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const signOut = async () => {
@@ -230,7 +389,54 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
     showToast('Profile Updated', 'Account details saved successfully.', 'sparkles');
   };
 
-  // Actions
+  // Manual Trigger Full Cloud Sync
+  const syncCloudNow = async () => {
+    if (!userAccount.isLoggedIn) {
+      showToast('Guest Mode', 'Sign in to sync your data to the cloud.', 'sparkles');
+      return;
+    }
+
+    setIsSyncing(true);
+    try {
+      const currentWeights = await getWeightLogs();
+      await supabasePushLocalData({
+        entries,
+        weights: currentWeights,
+        waterLogs,
+        goals,
+        profile: userProfile,
+      });
+
+      const cloudData = await supabaseFetchAllUserData();
+      if (cloudData) {
+        if (cloudData.foodEntries) {
+          setEntries(cloudData.foodEntries);
+          await setAllFoodEntries(cloudData.foodEntries);
+        }
+        if (cloudData.waterLogs) {
+          setWaterLogsState(cloudData.waterLogs);
+          await setAllWaterLogs(cloudData.waterLogs);
+        }
+        if (cloudData.goals) {
+          setGoals(cloudData.goals);
+          await saveMacroGoals(cloudData.goals);
+        }
+        if (cloudData.profile) {
+          setUserProfile(cloudData.profile);
+          await saveUserProfile(cloudData.profile);
+        }
+      }
+      triggerSuccessFeedback();
+      showToast('Cloud Sync Complete ☁️', 'All meals, targets, weights, and water logs are up to date.', 'sparkles');
+    } catch (err) {
+      console.error('Manual sync failed:', err);
+      showToast('Sync Error', 'Could not sync with Supabase. Check your connection.', 'sparkles');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Food Logging Actions
   const logMeal = async (meal: Omit<FoodEntry, 'id' | 'timestamp' | 'date'> & { date?: string }) => {
     try {
       const targetDate = meal.date || selectedDate;
@@ -290,6 +496,7 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
     try {
       const updated = await updateFoodEntry(entry);
       setEntries(updated);
+      supabaseSyncFoodEntry(entry);
       triggerSuccessFeedback();
       showToast('Meal Updated', `${entry.name} adjusted to ${entry.calories} kcal.`, 'sparkles');
     } catch (error) {
@@ -301,6 +508,7 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
     try {
       const updated = await deleteFoodEntry(id);
       setEntries(updated);
+      supabaseDeleteFoodEntry(id);
       triggerLightImpact();
       showToast('Meal Deleted', 'Entry removed from daily log.', 'sparkles');
     } catch (error) {
@@ -311,7 +519,8 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
   const updateGoals = async (newGoals: MacroTargets) => {
     setGoals(newGoals);
     await saveMacroGoals(newGoals);
-    showToast('Goals Updated 🎯', `Daily budget: ${newGoals.calories} kcal`, 'sparkles');
+    supabaseSyncMacroTargets(newGoals);
+    showToast('Goals Updated 🎯', `Daily budget: ${newGoals.calories} kcal • ${((newGoals.waterMl || 2000) / 1000).toFixed(1)}L Water`, 'sparkles');
   };
 
   const saveProfile = async (newProfile: UserProfile, newGoals: MacroTargets) => {
@@ -320,6 +529,8 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
     await saveUserProfile(newProfile);
     await saveMacroGoals(newGoals);
     await setOnboardingCompleted(true);
+    supabaseSyncUserProfile(newProfile);
+    supabaseSyncMacroTargets(newGoals);
     showToast('Nutrition Plan Activated 🎯', `${newGoals.calories} kcal • ${newGoals.protein}g Protein Target`, 'sparkles');
   };
 
@@ -371,9 +582,12 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
         userAccount,
         notificationSettings,
         dailySummary,
+        waterMl,
+        waterLogs,
         consumed,
         remaining,
         isLoading,
+        isSyncing,
         rewardState,
         toastNotification,
         onboardingVisible,
@@ -381,12 +595,15 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
         logMeal,
         editMeal,
         removeMeal,
+        logWater,
+        setWater,
         updateGoals,
         saveProfile,
         updateNotifications,
         signIn,
         signOut,
         updateAccount,
+        syncCloudNow,
         dismissReward,
         triggerManualReward,
         showToast,
@@ -405,3 +622,4 @@ export function useNutrition() {
   }
   return context;
 }
+

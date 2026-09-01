@@ -37,6 +37,12 @@ export interface WeightEntry {
   note?: string;
 }
 
+export interface DailyWaterLog {
+  date: string; // YYYY-MM-DD
+  waterMl: number;
+  updatedAt?: string;
+}
+
 export interface MacroTargets {
   calories: number;
   protein: number; // grams

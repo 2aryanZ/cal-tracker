@@ -12,6 +12,7 @@ const STORAGE_KEYS = {
   ONBOARDING_DONE: '@cal_ai_onboarding_done_v1',
   WEIGHT_LOGS: '@cal_ai_weight_logs_v1',
   ACCOUNT: '@cal_ai_user_account_v1',
+  WATER_LOGS: '@cal_ai_water_logs_v1',
 };
 
 export const DEFAULT_PROFILE: UserProfile = {
@@ -31,7 +32,7 @@ export const DEFAULT_GOALS: MacroTargets = {
   protein: 150,
   carbs: 220,
   fats: 65,
-  waterMl: 2500,
+  waterMl: 2000,
 };
 
 export const DEFAULT_NOTIFICATIONS: NotificationSettings = {
@@ -498,3 +499,64 @@ export async function signOutUser(): Promise<import('@/types/nutrition').UserAcc
   await saveUserAccount(account);
   return account;
 }
+
+// In-memory cache for daily water logs { [dateStr]: waterMl }
+let cachedWaterLogs: Record<string, number> | null = null;
+
+const INITIAL_WATER_LOGS: Record<string, number> = {
+  [getTodayDateString()]: 1500,
+};
+
+export async function getWaterLogs(): Promise<Record<string, number>> {
+  if (cachedWaterLogs) return cachedWaterLogs;
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEYS.WATER_LOGS);
+    if (!raw) {
+      cachedWaterLogs = INITIAL_WATER_LOGS;
+      await AsyncStorage.setItem(STORAGE_KEYS.WATER_LOGS, JSON.stringify(INITIAL_WATER_LOGS));
+      return INITIAL_WATER_LOGS;
+    }
+    cachedWaterLogs = JSON.parse(raw);
+    return cachedWaterLogs || {};
+  } catch (error) {
+    console.error('Error fetching water logs:', error);
+    return INITIAL_WATER_LOGS;
+  }
+}
+
+export async function getWaterForDate(dateStr: string): Promise<number> {
+  const logs = await getWaterLogs();
+  return logs[dateStr] ?? (dateStr === getTodayDateString() ? 1500 : 0);
+}
+
+export async function saveWaterForDate(dateStr: string, waterMl: number): Promise<Record<string, number>> {
+  try {
+    const logs = await getWaterLogs();
+    const updated = {
+      ...logs,
+      [dateStr]: Math.max(0, waterMl),
+    };
+    cachedWaterLogs = updated;
+    AsyncStorage.setItem(STORAGE_KEYS.WATER_LOGS, JSON.stringify(updated)).catch(console.error);
+    return updated;
+  } catch (error) {
+    console.error('Error saving water for date:', error);
+    throw error;
+  }
+}
+
+export async function setAllWaterLogs(logs: Record<string, number>): Promise<void> {
+  cachedWaterLogs = logs;
+  await AsyncStorage.setItem(STORAGE_KEYS.WATER_LOGS, JSON.stringify(logs));
+}
+
+export async function setAllFoodEntries(entries: FoodEntry[]): Promise<void> {
+  cachedEntries = entries;
+  await AsyncStorage.setItem(STORAGE_KEYS.ENTRIES, JSON.stringify(entries));
+}
+
+export async function setAllWeightLogs(logs: import('@/types/nutrition').WeightEntry[]): Promise<void> {
+  cachedWeightLogs = logs;
+  await AsyncStorage.setItem(STORAGE_KEYS.WEIGHT_LOGS, JSON.stringify(logs));
+}
+

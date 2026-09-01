@@ -43,10 +43,12 @@ export default function HistoryScreen() {
     selectedDate,
     setSelectedDate,
     goals,
+    waterMl,
     logMeal,
     editMeal,
     removeMeal,
   } = useNutrition();
+
 
   const [activeTab, setActiveTab] = useState<'calendar' | 'groups'>('calendar');
   const [viewMode, setViewMode] = useState<ViewMode>('day');
@@ -468,7 +470,15 @@ export default function HistoryScreen() {
                     </View>
                     <Text style={styles.macroPillVal}>{totalDayFats}g</Text>
                   </View>
+                  <View style={styles.macroPill}>
+                    <View style={styles.macroPillHeader}>
+                      <Droplet size={11} color="#0284C7" fill="#0284C7" />
+                      <Text style={[styles.macroPillLabel, { color: '#0284C7' }]}>Water</Text>
+                    </View>
+                    <Text style={styles.macroPillVal}>{(waterMl / 1000).toFixed(1)}L</Text>
+                  </View>
                 </View>
+
 
                 {/* Copy To Today Action */}
                 {selectedDate !== getTodayDateString() && dayEntries.length > 0 && (

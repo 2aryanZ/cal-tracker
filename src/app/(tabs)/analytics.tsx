@@ -21,7 +21,8 @@ import { triggerLightImpact, triggerSelection } from '@/services/hapticsService'
 export default function AnalyticsScreen() {
   const { stats, goals, userProfile, saveProfile, showToast } = useNutrition();
 
-  const [timeRange, setTimeRange] = useState<'90D' | '6M' | '1Y' | 'ALL'>('6M');
+  const [timeRange, setTimeRange] = useState<'30D' | '60D' | '90D' | '6M' | '1Y' | 'ALL'>('30D');
+  const [unit, setUnit] = useState<'kg' | 'lbs'>(userProfile.unitSystem === 'imperial' ? 'lbs' : 'kg');
   const [weightLogs, setWeightLogs] = useState<WeightEntry[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedPointIdx, setSelectedPointIdx] = useState<number | null>(null);
@@ -35,9 +36,16 @@ export default function AnalyticsScreen() {
     });
   }, []);
 
+  const isKg = unit === 'kg';
+  const unitLabel = isKg ? 'kg' : 'lbs';
+
   const currentWeightKg = userProfile.weightKg || (weightLogs[0]?.weightKg ?? 60);
   const currentWeightLbs = Math.round(kgToLbs(currentWeightKg) * 10) / 10;
-  const goalWeightLbs = Math.round(kgToLbs(userProfile.targetWeightKg || 58) * 10) / 10;
+  const goalWeightKg = userProfile.targetWeightKg || 58;
+  const goalWeightLbs = Math.round(kgToLbs(goalWeightKg) * 10) / 10;
+
+  const displayedCurrentWeight = isKg ? currentWeightKg : currentWeightLbs;
+  const displayedGoalWeight = isKg ? goalWeightKg : goalWeightLbs;
 
   // Chronological logs (oldest to newest for charting)
   const chronologicalLogs = useMemo(() => {
@@ -46,24 +54,35 @@ export default function AnalyticsScreen() {
     );
   }, [weightLogs]);
 
-  // Filter logs by selected time range
+  // Filter logs by selected time range (30D, 60D, 90D, 6M, 1Y, ALL)
   const filteredLogs = useMemo(() => {
     if (chronologicalLogs.length === 0) return [];
     if (timeRange === 'ALL') return chronologicalLogs;
 
     const now = new Date();
-    const days = timeRange === '90D' ? 90 : timeRange === '6M' ? 180 : 365;
+    const days =
+      timeRange === '30D'
+        ? 30
+        : timeRange === '60D'
+        ? 60
+        : timeRange === '90D'
+        ? 90
+        : timeRange === '6M'
+        ? 180
+        : 365;
     const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
 
     const subset = chronologicalLogs.filter((l) => new Date(l.date) >= cutoff);
     return subset.length >= 2 ? subset : chronologicalLogs;
   }, [chronologicalLogs, timeRange]);
 
-  // Starting weight & total delta
-  const startingWeightLbs = chronologicalLogs[0]?.weightLbs ?? currentWeightLbs;
-  const totalChangeLbs = Math.round((currentWeightLbs - startingWeightLbs) * 10) / 10;
-  const goalDeltaTotal = Math.abs(startingWeightLbs - goalWeightLbs) || 1;
-  const progressMade = Math.abs(startingWeightLbs - currentWeightLbs);
+  // Starting weight & total delta in active unit
+  const startingVal = isKg
+    ? (chronologicalLogs[0]?.weightKg ?? currentWeightKg)
+    : (chronologicalLogs[0]?.weightLbs ?? currentWeightLbs);
+  const totalChangeVal = Math.round((displayedCurrentWeight - startingVal) * 10) / 10;
+  const goalDeltaTotal = Math.abs(startingVal - displayedGoalWeight) || 1;
+  const progressMade = Math.abs(startingVal - displayedCurrentWeight);
   const goalProgressPercent = Math.min(Math.round((progressMade / goalDeltaTotal) * 100), 100);
 
   // BMI Calculation: weight (kg) / [height (m)]^2
@@ -80,22 +99,24 @@ export default function AnalyticsScreen() {
 
   const chartData = useMemo(() => {
     if (filteredLogs.length === 0) return [];
-    const minW = Math.min(...filteredLogs.map((l) => l.weightLbs)) - 1;
-    const maxW = Math.max(...filteredLogs.map((l) => l.weightLbs)) + 1;
+    const getLogWeight = (l: WeightEntry) => (isKg ? l.weightKg : l.weightLbs);
+    const minW = Math.min(...filteredLogs.map(getLogWeight)) - (isKg ? 0.4 : 1);
+    const maxW = Math.max(...filteredLogs.map(getLogWeight)) + (isKg ? 0.4 : 1);
     const rangeW = maxW - minW || 1;
 
     const count = filteredLogs.length;
     return filteredLogs.map((log, idx) => {
+      const val = getLogWeight(log);
       const x = paddingX + (idx / Math.max(count - 1, 1)) * (chartWidth - paddingX * 2);
-      const normalizedY = (log.weightLbs - minW) / rangeW;
+      const normalizedY = (val - minW) / rangeW;
       const y = chartHeight - paddingY - normalizedY * (chartHeight - paddingY * 2);
       const dateLabel = new Date(`${log.date}T00:00:00`).toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
       });
-      return { x, y, log, dateLabel };
+      return { x, y, log, val, dateLabel };
     });
-  }, [filteredLogs]);
+  }, [filteredLogs, isKg]);
 
   // Generate smooth SVG curve path
   const chartPath = useMemo(() => {
@@ -122,7 +143,8 @@ export default function AnalyticsScreen() {
     setWeightLogs(updated);
     // Update global userProfile active weight
     saveProfile({ ...userProfile, weightKg: data.weightKg }, goals);
-    showToast('Weigh-In Saved', `${data.weightLbs} lbs recorded successfully.`, 'sparkles');
+    const reportedVal = isKg ? `${data.weightKg} kg` : `${data.weightLbs} lbs`;
+    showToast('Weigh-In Saved', `${reportedVal} recorded successfully.`, 'sparkles');
   };
 
   const handleDeleteWeight = async (id: string) => {
@@ -136,16 +158,44 @@ export default function AnalyticsScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* Top Header */}
+      {/* Top Header with Unit Toggle Switch */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Progress</Text>
-        <TouchableOpacity
-          style={styles.logWeightHeaderBtn}
-          onPress={() => setIsModalOpen(true)}
-          activeOpacity={0.85}>
-          <Plus size={14} color={PALETTE[50]} />
-          <Text style={styles.logWeightHeaderBtnText}>Log Weight</Text>
-        </TouchableOpacity>
+        <View style={styles.headerRightActions}>
+          {/* Unit Toggle Pill: KG / LBS */}
+          <View style={styles.unitTogglePillContainer}>
+            <TouchableOpacity
+              style={[styles.unitToggleOption, isKg && styles.unitToggleOptionActive]}
+              onPress={() => {
+                triggerSelection();
+                setUnit('kg');
+              }}
+              activeOpacity={0.8}>
+              <Text style={[styles.unitToggleOptionText, isKg && styles.unitToggleOptionTextActive]}>
+                KG
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.unitToggleOption, !isKg && styles.unitToggleOptionActive]}
+              onPress={() => {
+                triggerSelection();
+                setUnit('lbs');
+              }}
+              activeOpacity={0.8}>
+              <Text style={[styles.unitToggleOptionText, !isKg && styles.unitToggleOptionTextActive]}>
+                LBS
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity
+            style={styles.logWeightHeaderBtn}
+            onPress={() => setIsModalOpen(true)}
+            activeOpacity={0.85}>
+            <Plus size={14} color={PALETTE[50]} />
+            <Text style={styles.logWeightHeaderBtnText}>Log Weight</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
@@ -158,8 +208,8 @@ export default function AnalyticsScreen() {
           <View style={styles.weightCard}>
             <View>
               <Text style={styles.cardLabel}>CURRENT WEIGHT</Text>
-              <Text style={styles.weightValue}>{currentWeightLbs} <Text style={styles.weightUnit}>lbs</Text></Text>
-              <Text style={styles.goalWeightLabel}>Target {goalWeightLbs} lbs • {bmiCategory} ({bmiValue})</Text>
+              <Text style={styles.weightValue}>{displayedCurrentWeight} <Text style={styles.weightUnit}>{unitLabel}</Text></Text>
+              <Text style={styles.goalWeightLabel}>Target {displayedGoalWeight} {unitLabel} • {bmiCategory} ({bmiValue})</Text>
             </View>
 
             <TouchableOpacity
@@ -198,7 +248,7 @@ export default function AnalyticsScreen() {
             <View>
               <Text style={styles.chartTitle}>Weight Progress</Text>
               <Text style={styles.chartSubtitle}>
-                {totalChangeLbs <= 0 ? `${totalChangeLbs} lbs` : `+${totalChangeLbs} lbs`} since start
+                {totalChangeVal <= 0 ? `${totalChangeVal} ${unitLabel}` : `+${totalChangeVal} ${unitLabel}`} since start
               </Text>
             </View>
             <View style={styles.goalPercentBadge}>
@@ -208,35 +258,37 @@ export default function AnalyticsScreen() {
 
           {/* Rapid 1-Tap Adjustments Row */}
           <View style={styles.rapidAdjustRow}>
-            <Text style={styles.rapidAdjustLabel}>Quick Log Today:</Text>
+            <Text style={styles.rapidAdjustLabel}>Quick Log:</Text>
             <TouchableOpacity
               style={styles.rapidAdjustBtn}
               onPress={() => {
                 triggerLightImpact();
-                const nextLbs = Math.round((currentWeightLbs - 0.5) * 10) / 10;
+                const delta = isKg ? 0.2 : 0.5;
+                const nextVal = Math.round((displayedCurrentWeight - delta) * 10) / 10;
                 handleAddWeight({
-                  weightLbs: nextLbs,
-                  weightKg: lbsToKg(nextLbs),
+                  weightKg: isKg ? nextVal : lbsToKg(nextVal),
+                  weightLbs: isKg ? kgToLbs(nextVal) : nextVal,
                   date: new Date().toISOString().split('T')[0],
-                  note: 'Quick -0.5 lbs update',
+                  note: `Quick -${delta} ${unitLabel} update`,
                 });
               }}>
-              <Text style={styles.rapidAdjustBtnText}>-0.5 lbs</Text>
+              <Text style={styles.rapidAdjustBtnText}>-{isKg ? '0.2 kg' : '0.5 lbs'}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.rapidAdjustBtn}
               onPress={() => {
                 triggerLightImpact();
-                const nextLbs = Math.round((currentWeightLbs + 0.5) * 10) / 10;
+                const delta = isKg ? 0.2 : 0.5;
+                const nextVal = Math.round((displayedCurrentWeight + delta) * 10) / 10;
                 handleAddWeight({
-                  weightLbs: nextLbs,
-                  weightKg: lbsToKg(nextLbs),
+                  weightKg: isKg ? nextVal : lbsToKg(nextVal),
+                  weightLbs: isKg ? kgToLbs(nextVal) : nextVal,
                   date: new Date().toISOString().split('T')[0],
-                  note: 'Quick +0.5 lbs update',
+                  note: `Quick +${delta} ${unitLabel} update`,
                 });
               }}>
-              <Text style={styles.rapidAdjustBtnText}>+0.5 lbs</Text>
+              <Text style={styles.rapidAdjustBtnText}>+{isKg ? '0.2 kg' : '0.5 lbs'}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -245,9 +297,10 @@ export default function AnalyticsScreen() {
                 triggerLightImpact();
                 setIsModalOpen(true);
               }}>
-              <Text style={styles.rapidAdjustBtnCustomText}>Custom Weigh-In</Text>
+              <Text style={styles.rapidAdjustBtnCustomText}>Custom</Text>
             </TouchableOpacity>
           </View>
+
 
           {/* Interactive SVG Line Chart */}
           <View style={styles.svgContainer}>
@@ -304,7 +357,7 @@ export default function AnalyticsScreen() {
                     left: Math.max(10, Math.min(activePoint.x - 36, chartWidth - 80)),
                   },
                 ]}>
-                <Text style={styles.tooltipWeight}>{activePoint.log.weightLbs} lbs</Text>
+                <Text style={styles.tooltipWeight}>{activePoint.val} {unitLabel}</Text>
                 <Text style={styles.tooltipDate}>{activePoint.dateLabel}</Text>
               </View>
             ) : null}
@@ -324,9 +377,9 @@ export default function AnalyticsScreen() {
             ))}
           </View>
 
-          {/* Time Range Selector Pills (90D, 6M, 1Y, ALL) */}
+          {/* Time Range Selector Pills (30D, 60D, 90D, 6M, 1Y, ALL) */}
           <View style={styles.rangePillsRow}>
-            {(['90D', '6M', '1Y', 'ALL'] as const).map((r) => (
+            {(['30D', '60D', '90D', '6M', '1Y', 'ALL'] as const).map((r) => (
               <TouchableOpacity
                 key={r}
                 style={[styles.rangePill, timeRange === r && styles.rangePillActive]}
@@ -360,7 +413,9 @@ export default function AnalyticsScreen() {
             </View>
             <View style={styles.forecastPill}>
               <Calendar size={11} color={PALETTE[700]} />
-              <Text style={styles.forecastPillText}>Estimated ~{Math.max(1, Math.round(Math.abs(currentWeightLbs - goalWeightLbs) / 1.2))} Weeks</Text>
+              <Text style={styles.forecastPillText}>
+                Estimated ~{Math.max(1, Math.round(Math.abs(displayedCurrentWeight - displayedGoalWeight) / (isKg ? 0.5 : 1.2)))} Weeks
+              </Text>
             </View>
           </View>
 
@@ -396,7 +451,7 @@ export default function AnalyticsScreen() {
         {/* Historical Weigh-In Log Table */}
         <View style={styles.historyCard}>
           <View style={styles.historyHeader}>
-            <Text style={styles.historyTitle}>Weigh-in History</Text>
+            <Text style={styles.historyTitle}>Weigh-in History ({unitLabel})</Text>
             <TouchableOpacity onPress={() => setIsModalOpen(true)}>
               <Text style={styles.historyAddLink}>+ Add Log</Text>
             </TouchableOpacity>
@@ -406,9 +461,11 @@ export default function AnalyticsScreen() {
             <Text style={styles.emptyHistoryText}>No weigh-in entries yet. Tap + Add Log to record.</Text>
           ) : (
             <View style={styles.historyList}>
-              {weightLogs.slice(0, 5).map((log, idx) => {
+              {weightLogs.slice(0, 6).map((log, idx) => {
                 const prevLog = weightLogs[idx + 1];
-                const diff = prevLog ? Math.round((log.weightLbs - prevLog.weightLbs) * 10) / 10 : 0;
+                const rowWeight = isKg ? log.weightKg : log.weightLbs;
+                const prevWeight = prevLog ? (isKg ? prevLog.weightKg : prevLog.weightLbs) : null;
+                const diff = prevWeight !== null ? Math.round((rowWeight - prevWeight) * 10) / 10 : 0;
                 const isLoss = diff < 0;
 
                 return (
@@ -420,7 +477,7 @@ export default function AnalyticsScreen() {
 
                     <View style={styles.historyRight}>
                       <View style={{ alignItems: 'flex-end' }}>
-                        <Text style={styles.historyWeightVal}>{log.weightLbs} lbs</Text>
+                        <Text style={styles.historyWeightVal}>{rowWeight} {unitLabel}</Text>
                         {prevLog ? (
                           <View style={styles.diffRow}>
                             {isLoss ? (
@@ -433,7 +490,7 @@ export default function AnalyticsScreen() {
                                 styles.historyDiffText,
                                 { color: isLoss ? PALETTE[600] : PALETTE[400] },
                               ]}>
-                              {diff > 0 ? `+${diff}` : diff} lbs
+                              {diff > 0 ? `+${diff}` : diff} {unitLabel}
                             </Text>
                           </View>
                         ) : (
@@ -476,11 +533,13 @@ export default function AnalyticsScreen() {
         visible={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         currentWeightKg={currentWeightKg}
+        initialUnit={unit}
         onSave={handleAddWeight}
       />
     </SafeAreaView>
   );
 }
+
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -502,14 +561,42 @@ const styles = StyleSheet.create({
     color: PALETTE[950],
     letterSpacing: -0.5,
   },
+  headerRightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  unitTogglePillContainer: {
+    flexDirection: 'row',
+    backgroundColor: PALETTE[100],
+    borderRadius: 8,
+    padding: 2,
+  },
+  unitToggleOption: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  unitToggleOptionActive: {
+    backgroundColor: PALETTE[950],
+  },
+  unitToggleOptionText: {
+    fontFamily: FONTS.sans,
+    fontSize: 10,
+    fontWeight: '800',
+    color: PALETTE[600],
+  },
+  unitToggleOptionTextActive: {
+    color: PALETTE[50],
+  },
   logWeightHeaderBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
     backgroundColor: PALETTE[950],
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
   },
   logWeightHeaderBtnText: {
     fontFamily: FONTS.sans,
@@ -517,6 +604,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: PALETTE[50],
   },
+
   scrollContainer: {
     flex: 1,
   },
