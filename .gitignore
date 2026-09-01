@@ -43,3 +43,9 @@ example
 # generated native folders
 /ios
 /android
+
+# build binaries
+*.apk
+*.aab
+*.ipa
+

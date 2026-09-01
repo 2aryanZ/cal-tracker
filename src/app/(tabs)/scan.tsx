@@ -12,8 +12,8 @@ import {
 import { Image } from 'expo-image';
 import { CameraView, useCameraPermissions, CameraType } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
-import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
+
 import {
   X,
   Zap,
@@ -25,11 +25,14 @@ import {
   Camera as CameraIcon,
   Flame,
 } from 'lucide-react-native';
-import { analyzeFoodImage } from '@/services/aiFoodService';
+import { analyzeFoodImage, analyzeNutritionLabelImage } from '@/services/aiFoodService';
+import { fetchProductByBarcode } from '@/services/barcodeService';
 import { MealResultModal } from '@/components/MealResultModal';
 import { useNutrition } from '@/context/NutritionContext';
 import { AiFoodDetectionResult } from '@/types/nutrition';
 import { PALETTE, FONTS } from '@/constants/theme';
+import { triggerLightImpact, triggerSelection, triggerSuccessFeedback } from '@/services/hapticsService';
+import { playGoalChime } from '@/services/soundService';
 
 const FALLBACK_FOOD_IMAGE =
   'https://images.unsplash.com/photo-1540420773420-3366772f4999?w=350&q=75&auto=format&fit=crop';
@@ -51,12 +54,22 @@ export default function ScanScreen() {
   const [scanResult, setScanResult] = useState<AiFoodDetectionResult | null>(null);
   const [resultModalVisible, setResultModalVisible] = useState(false);
 
+  // Debounce ref for barcode scanning to prevent multi-trigger
+  const lastScannedBarcodeRef = useRef<string | null>(null);
+  const isBarcodeLockedRef = useRef(false);
+
   const processImage = async (imageUri: string, base64?: string) => {
     setSelectedImage(imageUri);
     setIsScanning(true);
 
     try {
-      const result = await analyzeFoodImage(imageUri, base64);
+      let result: AiFoodDetectionResult;
+      if (scanMode === 'label') {
+        result = await analyzeNutritionLabelImage(imageUri, base64);
+      } else {
+        result = await analyzeFoodImage(imageUri, base64);
+      }
+      triggerSuccessFeedback();
       setScanResult(result);
       setResultModalVisible(true);
     } catch (err) {
@@ -67,13 +80,46 @@ export default function ScanScreen() {
     }
   };
 
+  const handleBarcodeScanned = async (event: { data: string; type: string }) => {
+    const rawCode = event?.data;
+    if (!rawCode || isScanning || isBarcodeLockedRef.current) return;
+    if (lastScannedBarcodeRef.current === rawCode) return;
+
+    lastScannedBarcodeRef.current = rawCode;
+    isBarcodeLockedRef.current = true;
+    setIsScanning(true);
+
+    triggerSuccessFeedback();
+    playGoalChime();
+
+    try {
+      const product = await fetchProductByBarcode(rawCode);
+      if (product) {
+        setScanResult(product);
+        setResultModalVisible(true);
+      } else {
+        Alert.alert(
+          'Barcode Not Found',
+          `Could not find product for barcode ${rawCode}. You can try scanning the Nutrition Facts label.`
+        );
+      }
+    } catch (err) {
+      console.warn('Barcode scan error:', err);
+      Alert.alert('Barcode Lookup Error', 'Could not fetch barcode information. Please try again.');
+    } finally {
+      setIsScanning(false);
+      setTimeout(() => {
+        isBarcodeLockedRef.current = false;
+        lastScannedBarcodeRef.current = null;
+      }, 2500);
+    }
+  };
+
   const handleCapture = async () => {
     // If live camera view is active and granted
     if (cameraRef.current && permission?.granted) {
       try {
-        if (Platform.OS !== 'web') {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        }
+        triggerLightImpact();
         setIsScanning(true);
         const photo = await cameraRef.current.takePictureAsync({
           base64: true,
@@ -157,6 +203,7 @@ export default function ScanScreen() {
   };
 
   const toggleCameraFacing = () => {
+    triggerSelection();
     setFacing((current) => (current === 'back' ? 'front' : 'back'));
   };
 
@@ -172,7 +219,13 @@ export default function ScanScreen() {
           <View style={styles.fitnessBadge}>
             <Flame size={13} color="#10B981" fill="#10B981" />
           </View>
-          <Text style={styles.topTitle}>Cal Tracker Vision</Text>
+          <Text style={styles.topTitle}>
+            {scanMode === 'barcode'
+              ? 'Barcode Scanner'
+              : scanMode === 'label'
+              ? 'Nutrition Label OCR'
+              : 'Cal Tracker Vision'}
+          </Text>
         </View>
 
         <TouchableOpacity style={styles.topBtn} onPress={toggleCameraFacing}>
@@ -188,6 +241,26 @@ export default function ScanScreen() {
             style={StyleSheet.absoluteFillObject}
             facing={facing}
             enableTorch={torch}
+            barcodeScannerSettings={
+              scanMode === 'barcode'
+                ? {
+                    barcodeTypes: [
+                      'qr',
+                      'ean13',
+                      'ean8',
+                      'upc_a',
+                      'upc_e',
+                      'code128',
+                      'code39',
+                      'codabar',
+                      'itf14',
+                      'datamatrix',
+                      'pdf417',
+                    ],
+                  }
+                : undefined
+            }
+            onBarcodeScanned={scanMode === 'barcode' && !isScanning ? handleBarcodeScanned : undefined}
           />
         ) : (
           <View style={styles.permissionFallback}>
@@ -201,7 +274,7 @@ export default function ScanScreen() {
               <CameraIcon size={32} color={PALETTE[50]} />
               <Text style={styles.permissionTitle}>Camera Access Required</Text>
               <Text style={styles.permissionSub}>
-                Enable camera to snap live food photos and get instant calorie recognition
+                Enable camera to scan barcodes and snap food photos for instant nutrition facts
               </Text>
               <TouchableOpacity
                 style={styles.grantPermissionBtn}
@@ -213,22 +286,57 @@ export default function ScanScreen() {
           </View>
         )}
 
-        {/* Monochrome AI Food Tag Pins */}
-        <View style={[styles.aiPin, styles.pinLettuce]}>
-          <Text style={styles.pinText}>Visual AI Vision</Text>
-          <View style={styles.pinDot} />
-        </View>
+        {/* Scan Mode Overlays & Reticles */}
+        {scanMode === 'food' && (
+          <View style={[styles.aiPin, styles.pinLettuce]}>
+            <Text style={styles.pinText}>Visual AI Vision</Text>
+            <View style={styles.pinDot} />
+          </View>
+        )}
+
+        {/* Barcode Frame Reticle Overlay */}
+        {scanMode === 'barcode' && (
+          <View style={styles.reticleOverlayContainer} pointerEvents="none">
+            <View style={styles.barcodeFrame}>
+              <View style={[styles.cornerBracket, styles.cornerTopLeft]} />
+              <View style={[styles.cornerBracket, styles.cornerTopRight]} />
+              <View style={[styles.cornerBracket, styles.cornerBottomLeft]} />
+              <View style={[styles.cornerBracket, styles.cornerBottomRight]} />
+              <View style={styles.laserLine} />
+            </View>
+            <Text style={styles.reticleInstructionText}>Align barcode within the frame</Text>
+          </View>
+        )}
+
+        {/* Nutrition Label Frame Reticle Overlay */}
+        {scanMode === 'label' && (
+          <View style={styles.reticleOverlayContainer} pointerEvents="none">
+            <View style={styles.labelFrame}>
+              <View style={[styles.cornerBracket, styles.cornerTopLeft]} />
+              <View style={[styles.cornerBracket, styles.cornerTopRight]} />
+              <View style={[styles.cornerBracket, styles.cornerBottomLeft]} />
+              <View style={[styles.cornerBracket, styles.cornerBottomRight]} />
+            </View>
+            <Text style={styles.reticleInstructionText}>Position Nutrition Facts label in frame</Text>
+          </View>
+        )}
 
         {/* Zoom Selector Pills (.5x, 1x) */}
         <View style={styles.zoomRow}>
           <TouchableOpacity
             style={[styles.zoomPill, zoomLevel === '0.5x' && styles.zoomPillActive]}
-            onPress={() => setZoomLevel('0.5x')}>
+            onPress={() => {
+              triggerSelection();
+              setZoomLevel('0.5x');
+            }}>
             <Text style={[styles.zoomText, zoomLevel === '0.5x' && styles.zoomTextActive]}>.5x</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.zoomPill, zoomLevel === '1x' && styles.zoomPillActive]}
-            onPress={() => setZoomLevel('1x')}>
+            onPress={() => {
+              triggerSelection();
+              setZoomLevel('1x');
+            }}>
             <Text style={[styles.zoomText, zoomLevel === '1x' && styles.zoomTextActive]}>1x</Text>
           </TouchableOpacity>
         </View>
@@ -239,7 +347,10 @@ export default function ScanScreen() {
           <View style={styles.modeTabsRow}>
             <TouchableOpacity
               style={[styles.modeTab, scanMode === 'food' && styles.modeTabActive]}
-              onPress={() => setScanMode('food')}>
+              onPress={() => {
+                triggerSelection();
+                setScanMode('food');
+              }}>
               <Scan size={13} color={scanMode === 'food' ? PALETTE[950] : PALETTE[300]} />
               <Text style={[styles.modeTabText, scanMode === 'food' && styles.modeTabTextActive]}>
                 Scan Food
@@ -248,7 +359,10 @@ export default function ScanScreen() {
 
             <TouchableOpacity
               style={[styles.modeTab, scanMode === 'barcode' && styles.modeTabActive]}
-              onPress={() => setScanMode('barcode')}>
+              onPress={() => {
+                triggerSelection();
+                setScanMode('barcode');
+              }}>
               <QrCode size={13} color={scanMode === 'barcode' ? PALETTE[950] : PALETTE[300]} />
               <Text style={[styles.modeTabText, scanMode === 'barcode' && styles.modeTabTextActive]}>
                 Barcode
@@ -257,7 +371,10 @@ export default function ScanScreen() {
 
             <TouchableOpacity
               style={[styles.modeTab, scanMode === 'label' && styles.modeTabActive]}
-              onPress={() => setScanMode('label')}>
+              onPress={() => {
+                triggerSelection();
+                setScanMode('label');
+              }}>
               <Tag size={13} color={scanMode === 'label' ? PALETTE[950] : PALETTE[300]} />
               <Text style={[styles.modeTabText, scanMode === 'label' && styles.modeTabTextActive]}>
                 Food Label
@@ -269,7 +386,10 @@ export default function ScanScreen() {
           <View style={styles.shutterRow}>
             <TouchableOpacity
               style={[styles.shutterSideBtn, torch && styles.shutterSideBtnActive]}
-              onPress={() => setTorch(!torch)}>
+              onPress={() => {
+                triggerLightImpact();
+                setTorch(!torch);
+              }}>
               <Zap size={20} color={torch ? PALETTE[950] : PALETTE[50]} />
             </TouchableOpacity>
 
@@ -283,7 +403,12 @@ export default function ScanScreen() {
               </View>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.shutterSideBtn} onPress={handlePickGallery}>
+            <TouchableOpacity
+              style={styles.shutterSideBtn}
+              onPress={() => {
+                triggerLightImpact();
+                handlePickGallery();
+              }}>
               <ImageIcon size={20} color={PALETTE[50]} />
             </TouchableOpacity>
           </View>
@@ -314,6 +439,7 @@ export default function ScanScreen() {
     </SafeAreaView>
   );
 }
+
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -540,4 +666,81 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  reticleOverlayContainer: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingBottom: 110,
+  },
+  barcodeFrame: {
+    width: 250,
+    height: 140,
+    position: 'relative',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  labelFrame: {
+    width: 260,
+    height: 320,
+    position: 'relative',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cornerBracket: {
+    position: 'absolute',
+    width: 24,
+    height: 24,
+    borderColor: '#10B981',
+  },
+  cornerTopLeft: {
+    top: 0,
+    left: 0,
+    borderTopWidth: 3.5,
+    borderLeftWidth: 3.5,
+    borderTopLeftRadius: 8,
+  },
+  cornerTopRight: {
+    top: 0,
+    right: 0,
+    borderTopWidth: 3.5,
+    borderRightWidth: 3.5,
+    borderTopRightRadius: 8,
+  },
+  cornerBottomLeft: {
+    bottom: 0,
+    left: 0,
+    borderBottomWidth: 3.5,
+    borderLeftWidth: 3.5,
+    borderBottomLeftRadius: 8,
+  },
+  cornerBottomRight: {
+    bottom: 0,
+    right: 0,
+    borderBottomWidth: 3.5,
+    borderRightWidth: 3.5,
+    borderBottomRightRadius: 8,
+  },
+  laserLine: {
+    width: '90%',
+    height: 2,
+    backgroundColor: '#10B981',
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  reticleInstructionText: {
+    fontFamily: FONTS.sans,
+    fontSize: 12,
+    fontWeight: '700',
+    color: PALETTE[50],
+    backgroundColor: 'rgba(16, 33, 35, 0.75)',
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: 12,
+    marginTop: 16,
+    overflow: 'hidden',
+  },
 });
+
