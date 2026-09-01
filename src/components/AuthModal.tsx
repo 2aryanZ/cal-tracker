@@ -16,9 +16,9 @@ import {
   ChevronLeft,
   X,
   Sparkles,
-  ShieldCheck,
   ArrowRight,
 } from 'lucide-react-native';
+
 import { PALETTE, FONTS } from '@/constants/theme';
 import { useNutrition } from '@/context/NutritionContext';
 
@@ -41,7 +41,7 @@ export function AuthModal({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [loadingProvider, setLoadingProvider] = useState<'email' | 'google' | 'apple' | 'demo' | null>(null);
+  const [loadingProvider, setLoadingProvider] = useState<'email' | 'google' | 'apple' | null>(null);
 
   const handleConnect = async () => {
     if (!email || !email.includes('@')) {
@@ -67,7 +67,7 @@ export function AuthModal({
     }
   };
 
-  const handleSocialSignIn = async (provider: 'google' | 'apple' | 'demo') => {
+  const handleSocialSignIn = async (provider: 'google' | 'apple') => {
     setIsSubmitting(true);
     setLoadingProvider(provider);
     try {
@@ -81,13 +81,6 @@ export function AuthModal({
         if (success) {
           onClose();
         }
-      } else {
-        if (onSignIn) {
-          await onSignIn('aryan@caltracker.app', 'Aryan');
-        } else {
-          await signIn('aryan@caltracker.app', 'Aryan');
-        }
-        onClose();
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Auth failed';
@@ -97,7 +90,7 @@ export function AuthModal({
       ) {
         Alert.alert(
           'Google Sign-In Configuration',
-          'Google OAuth is not yet enabled in your Supabase Dashboard.\n\nTo enable it:\n1. Go to your Supabase Project -> Authentication -> Providers\n2. Enable Google & paste your Google Client ID\n\nIn the meantime, you can log in directly with Email & Password or Demo Login!'
+          'Google OAuth is not yet enabled in your Supabase Dashboard.\n\nTo enable it:\n1. Go to your Supabase Project -> Authentication -> Providers\n2. Enable Google & paste your Google Client ID\n\nIn the meantime, you can log in directly with Email & Password!'
         );
       } else {
         Alert.alert('Sign In Notice', msg);
@@ -107,6 +100,7 @@ export function AuthModal({
       setLoadingProvider(null);
     }
   };
+
 
 
   if (!visible) return null;
@@ -336,24 +330,14 @@ export function AuthModal({
                       </>
                     )}
                   </TouchableOpacity>
-
-                  {/* Quick Demo Pro Login */}
-                  <TouchableOpacity
-                    style={styles.demoPillBtn}
-                    onPress={() => handleSocialSignIn('demo')}
-                    disabled={isSubmitting}
-                    activeOpacity={0.8}>
-                    <ShieldCheck size={14} color={PALETTE[700]} />
-                    <Text style={styles.demoPillText}>One-Tap Demo Login (Aryan • Pro)</Text>
-                  </TouchableOpacity>
                 </View>
-
 
                 {/* Privacy Policy Footer */}
                 <Text style={styles.privacyFooterText}>
                   For more information, please see our{' '}
                   <Text style={styles.privacyLink}>Privacy policy</Text>.
                 </Text>
+
               </ScrollView>
             </View>
           )}
@@ -735,30 +719,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: PALETTE[950],
   },
-  demoPillBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: PALETTE[100],
-    paddingVertical: 11,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: PALETTE[200],
-    marginTop: 4,
-  },
-  demoPillText: {
-    fontFamily: FONTS.sans,
-    fontSize: 12,
-    fontWeight: '700',
-    color: PALETTE[700],
-  },
   privacyFooterText: {
     fontFamily: FONTS.sans,
     fontSize: 11,
     color: PALETTE[400],
     textAlign: 'center',
   },
+
   privacyLink: {
     fontWeight: '700',
     color: PALETTE[950],
