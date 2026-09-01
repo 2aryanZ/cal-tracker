@@ -2,14 +2,14 @@
   "expo": {
     "name": "Cal AI - Calorie Tracker",
     "slug": "cal-tracker",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "caltracker",
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "com.caltracker.app",
-      "buildNumber": "2",
+      "buildNumber": "3",
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "Cal AI uses your camera to scan meals, recognize food items, and calculate calories and macronutrients.",
@@ -20,7 +20,8 @@
     },
     "android": {
       "package": "com.caltracker.app",
-      "versionCode": 3,
+      "versionCode": 4,
+
 
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/android-icon-foreground.png",
