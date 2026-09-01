@@ -383,8 +383,10 @@ export async function setOnboardingCompleted(status: boolean): Promise<void> {
   }
 }
 
-export function generateDefaultWeightLogs(): import('@/types/nutrition').WeightEntry[] {
+export function generateDefaultWeightLogs(startingWeightKg?: number): import('@/types/nutrition').WeightEntry[] {
   const today = new Date();
+  const weight = startingWeightKg || DEFAULT_PROFILE.weightKg || 75;
+  const lbs = Math.round(weight * 2.20462 * 10) / 10;
   
   const formatDateOffset = (daysAgo: number) => {
     const d = new Date(today);
@@ -398,8 +400,8 @@ export function generateDefaultWeightLogs(): import('@/types/nutrition').WeightE
   return [
     {
       id: 'w_today',
-      weightKg: 78.0,
-      weightLbs: 172.0,
+      weightKg: weight,
+      weightLbs: lbs,
       date: formatDateOffset(0), // Today (e.g. 2026-09-01)
       timestamp: new Date().toISOString(),
       note: 'Starting weigh-in',
@@ -410,9 +412,10 @@ export function generateDefaultWeightLogs(): import('@/types/nutrition').WeightE
 export async function getWeightLogs(): Promise<import('@/types/nutrition').WeightEntry[]> {
   if (cachedWeightLogs) return cachedWeightLogs;
   try {
+    const profile = await getUserProfile();
     const raw = await AsyncStorage.getItem(STORAGE_KEYS.WEIGHT_LOGS);
     if (!raw) {
-      const initial = generateDefaultWeightLogs();
+      const initial = generateDefaultWeightLogs(profile?.weightKg);
       await AsyncStorage.setItem(STORAGE_KEYS.WEIGHT_LOGS, JSON.stringify(initial));
       cachedWeightLogs = initial;
       return initial;
@@ -422,7 +425,7 @@ export async function getWeightLogs(): Promise<import('@/types/nutrition').Weigh
     // Auto-migrate legacy 2025 test dates if detected
     const hasOutdated2025Dates = parsed.some((l) => l.date && l.date.startsWith('2025-'));
     if (hasOutdated2025Dates) {
-      const freshLogs = generateDefaultWeightLogs();
+      const freshLogs = generateDefaultWeightLogs(profile?.weightKg);
       await AsyncStorage.setItem(STORAGE_KEYS.WEIGHT_LOGS, JSON.stringify(freshLogs));
       cachedWeightLogs = freshLogs;
       return freshLogs;
@@ -435,6 +438,7 @@ export async function getWeightLogs(): Promise<import('@/types/nutrition').Weigh
     return generateDefaultWeightLogs();
   }
 }
+
 
 
 export async function addWeightLog(entry: {

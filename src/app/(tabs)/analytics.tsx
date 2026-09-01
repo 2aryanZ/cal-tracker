@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,32 +12,26 @@ import Svg, { Path, Circle, Line, Defs, LinearGradient, Stop } from 'react-nativ
 import { Flame, ArrowRight, Check, TrendingUp, TrendingDown, Plus, Trash2, Target, Zap, Activity, Calendar } from 'lucide-react-native';
 import { useNutrition } from '@/context/NutritionContext';
 import { kgToLbs, lbsToKg } from '@/services/tdeeCalculator';
-import { getWeightLogs, addWeightLog, deleteWeightLog, getTodayDateString } from '@/services/storage';
-
+import { getTodayDateString } from '@/services/storage';
 import { WeightEntry } from '@/types/nutrition';
 import { WeightLogModal } from '@/components/WeightLogModal';
 import { PALETTE, FONTS } from '@/constants/theme';
 import { triggerLightImpact, triggerSelection } from '@/services/hapticsService';
 
 export default function AnalyticsScreen() {
-  const { stats, goals, userProfile, saveProfile, showToast } = useNutrition();
+  const { stats, goals, userProfile, weightLogs, addWeight, deleteWeight } = useNutrition();
+
 
   const [timeRange, setTimeRange] = useState<'30D' | '60D' | '90D' | '6M' | '1Y' | 'ALL'>('30D');
   const [unit, setUnit] = useState<'kg' | 'lbs'>(userProfile.unitSystem === 'imperial' ? 'lbs' : 'kg');
-  const [weightLogs, setWeightLogs] = useState<WeightEntry[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedPointIdx, setSelectedPointIdx] = useState<number | null>(null);
-
-  useEffect(() => {
-    getWeightLogs().then((logs) => {
-      setWeightLogs(logs);
-    });
-  }, []);
 
   const isKg = unit === 'kg';
   const unitLabel = isKg ? 'kg' : 'lbs';
 
-  const currentWeightKg = userProfile.weightKg || (weightLogs[0]?.weightKg ?? 78);
+  // Latest recorded weigh-in takes precedence across the entire app
+  const currentWeightKg = weightLogs[0]?.weightKg ?? userProfile.weightKg ?? 75;
   const currentWeightLbs = Math.round(kgToLbs(currentWeightKg) * 10) / 10;
   const goalWeightKg = userProfile.targetWeightKg || 74;
   const goalWeightLbs = Math.round(kgToLbs(goalWeightKg) * 10) / 10;
@@ -137,26 +131,19 @@ export default function AnalyticsScreen() {
       ? chartData[selectedPointIdx]
       : chartData[chartData.length - 1] || { val: displayedCurrentWeight, dateLabel: 'Today' };
 
-
   const handleAddWeight = async (data: {
     weightKg: number;
     weightLbs: number;
     date: string;
     note?: string;
   }) => {
-    const updated = await addWeightLog(data);
-    setWeightLogs(updated);
-    // Update global userProfile active weight
-    saveProfile({ ...userProfile, weightKg: data.weightKg }, goals);
-    const reportedVal = isKg ? `${data.weightKg} kg` : `${data.weightLbs} lbs`;
-    showToast('Weigh-In Saved', `${reportedVal} recorded successfully.`, 'sparkles');
+    await addWeight(data);
   };
 
   const handleDeleteWeight = async (id: string) => {
-    const updated = await deleteWeightLog(id);
-    setWeightLogs(updated);
-    showToast('Entry Removed', 'Weight entry deleted.', 'sparkles');
+    await deleteWeight(id);
   };
+
 
   // Streak days (S M T W T F S)
   const streakDays = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];

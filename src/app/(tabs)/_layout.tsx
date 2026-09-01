@@ -25,7 +25,9 @@ import { triggerSelection, triggerMediumImpact, triggerLightImpact } from '@/ser
 import { useNutrition } from '@/context/NutritionContext';
 import { WeightLogModal } from '@/components/WeightLogModal';
 import { MealResultModal } from '@/components/MealResultModal';
-import { addWeightLog, getTodayDateString } from '@/services/storage';
+import { getTodayDateString } from '@/services/storage';
+
+
 import { MealType } from '@/types/nutrition';
 
 interface CustomTabBarProps {
@@ -129,7 +131,8 @@ function CustomTabBar({ state, navigation, onPlusPress }: CustomTabBarProps) {
 
 export default function TabsLayout() {
   const router = useRouter();
-  const { userProfile, saveProfile, goals, logMeal, showToast, selectedDate } = useNutrition();
+  const { userProfile, addWeight, logMeal, selectedDate } = useNutrition();
+
 
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
   const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
@@ -141,10 +144,9 @@ export default function TabsLayout() {
     date: string;
     note?: string;
   }) => {
-    await addWeightLog(data);
-    saveProfile({ ...userProfile, weightKg: data.weightKg }, goals);
-    showToast('Weight Logged', `${data.weightLbs} lbs saved to your progress tracker.`, 'sparkles');
+    await addWeight(data);
   };
+
 
   const handleSaveManualMeal = (item: {
     name: string;

@@ -247,12 +247,13 @@ export default function SettingsScreen() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.profileName}>
-                {userProfile.gender === 'male' ? 'Male' : 'Female'} • {userProfile.age} yrs • {userProfile.weightKg} kg
+                {userProfile.gender === 'male' ? 'Male' : 'Female'} • {userProfile.age} yrs • {userProfile.unitSystem === 'imperial' ? `${Math.round(userProfile.weightKg * 2.20462 * 10) / 10} lbs` : `${userProfile.weightKg} kg`}
               </Text>
               <Text style={styles.profileSub}>
                 Goal: {userProfile.goal === 'fat_loss' ? 'Fat Loss' : userProfile.goal === 'muscle_gain' ? 'Muscle Gain' : userProfile.goal === 'recomposition' ? 'Body Recomp' : 'Maintenance'}
               </Text>
             </View>
+
           </View>
 
           <TouchableOpacity

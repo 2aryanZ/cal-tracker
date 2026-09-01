@@ -10,6 +10,7 @@ import {
   UserProfile,
   ToastNotification,
   UserAccount,
+  WeightEntry,
 } from '@/types/nutrition';
 import {
   initializeStorage,
@@ -36,6 +37,8 @@ import {
   setAllWaterLogs,
   setAllFoodEntries,
   getWeightLogs,
+  addWeightLog,
+  deleteWeightLog,
   DEFAULT_GOALS,
   DEFAULT_STATS,
   DEFAULT_NOTIFICATIONS,
@@ -51,6 +54,7 @@ import {
   supabaseSyncFoodEntry,
   supabaseDeleteFoodEntry,
   supabaseSyncWaterLog,
+  supabaseSyncWeightLog,
   supabaseSyncMacroTargets,
   supabaseSyncUserProfile,
   supabaseFetchAllUserData,
@@ -59,7 +63,6 @@ import {
 
 import { playGoalChime } from '@/services/soundService';
 import { triggerGoalCelebrationHaptic, triggerSuccessFeedback, triggerLightImpact } from '@/services/hapticsService';
-
 
 interface RewardState {
   visible: boolean;
@@ -81,6 +84,7 @@ interface NutritionContextType {
   dailySummary: DailySummary;
   waterMl: number;
   waterLogs: Record<string, number>;
+  weightLogs: WeightEntry[];
   consumed: {
     calories: number;
     protein: number;
@@ -104,6 +108,8 @@ interface NutritionContextType {
   removeMeal: (id: string) => Promise<void>;
   logWater: (amountMl: number, date?: string) => Promise<void>;
   setWater: (totalMl: number, date?: string) => Promise<void>;
+  addWeight: (data: { weightKg: number; weightLbs: number; date?: string; note?: string }) => Promise<void>;
+  deleteWeight: (id: string) => Promise<void>;
   updateGoals: (goals: MacroTargets) => Promise<void>;
   saveProfile: (profile: UserProfile, newGoals: MacroTargets) => Promise<void>;
   updateNotifications: (settings: NotificationSettings) => Promise<void>;
@@ -113,6 +119,7 @@ interface NutritionContextType {
   signOut: () => Promise<void>;
   updateAccount: (account: Partial<UserAccount>) => Promise<void>;
   syncCloudNow: () => Promise<void>;
+
 
   dismissReward: () => void;
   triggerManualReward: () => void;
@@ -132,6 +139,7 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
   const [userAccount, setUserAccount] = useState<UserAccount>(DEFAULT_ACCOUNT);
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(DEFAULT_NOTIFICATIONS);
   const [waterLogs, setWaterLogsState] = useState<Record<string, number>>({});
+  const [weightLogs, setWeightLogsState] = useState<WeightEntry[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [onboardingVisible, setOnboardingVisible] = useState<boolean>(false);
@@ -157,6 +165,7 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
         storedProfile,
         storedAccount,
         storedWaterLogs,
+        storedWeights,
         onboardingDone,
       ] = await Promise.all([
         getFoodEntries(),
@@ -166,6 +175,7 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
         getUserProfile(),
         getUserAccount(),
         getWaterLogs(),
+        getWeightLogs(),
         hasCompletedOnboarding(),
       ]);
 
@@ -176,10 +186,12 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
       setUserProfile(storedProfile);
       setUserAccount(storedAccount);
       setWaterLogsState(storedWaterLogs);
+      setWeightLogsState(storedWeights);
 
       if (!onboardingDone) {
         setOnboardingVisible(true);
       }
+
 
       // Schedule notifications in background
       scheduleMealReminders(storedNotifs);
@@ -329,8 +341,53 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
     showToast('Hydration Updated 💧', `Set to ${(newTotal / 1000).toFixed(2)}L for ${targetDate}`, 'droplet');
   };
 
+  // Weight Tracking Handlers
+  const addWeight = async (data: { weightKg: number; weightLbs: number; date?: string; note?: string }) => {
+    const targetDate = data.date || getTodayDateString();
+    const updated = await addWeightLog({
+      weightKg: data.weightKg,
+      weightLbs: data.weightLbs,
+      date: targetDate,
+      note: data.note,
+    });
+    setWeightLogsState(updated);
+
+    // Synchronize userProfile weight to match
+    const updatedProfile: UserProfile = { ...userProfile, weightKg: data.weightKg };
+    setUserProfile(updatedProfile);
+    await saveUserProfile(updatedProfile);
+
+    // Sync to Supabase
+    supabaseSyncWeightLog({
+      id: updated[0]?.id || `w_${Date.now()}`,
+      weightKg: data.weightKg,
+      weightLbs: data.weightLbs,
+      date: targetDate,
+      timestamp: new Date().toISOString(),
+      note: data.note,
+    });
+
+
+    triggerLightImpact();
+    const displayVal = userProfile.unitSystem === 'imperial' ? `${data.weightLbs} lbs` : `${data.weightKg} kg`;
+    showToast('Weigh-In Saved', `${displayVal} recorded for ${targetDate}`, 'sparkles');
+  };
+
+  const deleteWeight = async (id: string) => {
+    const updated = await deleteWeightLog(id);
+    setWeightLogsState(updated);
+    if (updated.length > 0) {
+      const newActiveKg = updated[0].weightKg;
+      const updatedProfile: UserProfile = { ...userProfile, weightKg: newActiveKg };
+      setUserProfile(updatedProfile);
+      await saveUserProfile(updatedProfile);
+    }
+    showToast('Log Removed', 'Weigh-in entry deleted.', 'sparkles');
+  };
+
   // Authentication Handlers
   const signIn = async (email: string, name?: string, password?: string) => {
+
     setIsSyncing(true);
     try {
       // 1. Sign up/in directly with Supabase Auth
@@ -643,6 +700,19 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
     await saveUserProfile(newProfile);
     await saveMacroGoals(newGoals);
     await setOnboardingCompleted(true);
+
+    // Keep weight logs in 100% sync whenever profile weight changes
+    if (newProfile.weightKg) {
+      const lbs = Math.round(newProfile.weightKg * 2.20462 * 10) / 10;
+      const updated = await addWeightLog({
+        weightKg: newProfile.weightKg,
+        weightLbs: lbs,
+        date: getTodayDateString(),
+        note: 'Updated profile baseline',
+      });
+      setWeightLogsState(updated);
+    }
+
     supabaseSyncUserProfile(newProfile);
     supabaseSyncMacroTargets(newGoals);
     showToast('Nutrition Plan Activated 🎯', `${newGoals.calories} kcal • ${newGoals.protein}g Protein Target`, 'sparkles');
@@ -698,6 +768,7 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
         dailySummary,
         waterMl,
         waterLogs,
+        weightLogs,
         consumed,
         remaining,
         isLoading,
@@ -711,6 +782,8 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
         removeMeal,
         logWater,
         setWater,
+        addWeight,
+        deleteWeight,
         updateGoals,
         saveProfile,
         updateNotifications,
@@ -731,6 +804,7 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
     </NutritionContext.Provider>
   );
 }
+
 
 export function useNutrition() {
   const context = useContext(NutritionContext);
