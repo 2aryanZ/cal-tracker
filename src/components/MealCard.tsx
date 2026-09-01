@@ -4,6 +4,7 @@ import { Image } from 'expo-image';
 import { Trash2, Plus, Flame, Drumstick, Wheat, Droplet } from 'lucide-react-native';
 import { FoodEntry, MealType } from '@/types/nutrition';
 import { PALETTE, FONTS } from '@/constants/theme';
+import { triggerLightImpact } from '@/services/hapticsService';
 
 interface MealCardProps {
   type: MealType;
@@ -36,7 +37,10 @@ export const MealCard = React.memo(function MealCard({
         <Text style={styles.title}>{title}</Text>
         <TouchableOpacity
           style={styles.addBtn}
-          onPress={() => onAddPress(type)}
+          onPress={() => {
+            triggerLightImpact();
+            onAddPress(type);
+          }}
           activeOpacity={0.7}>
           <Plus size={15} color={PALETTE[950]} />
         </TouchableOpacity>
@@ -46,7 +50,10 @@ export const MealCard = React.memo(function MealCard({
       {entries.length === 0 ? (
         <TouchableOpacity
           style={styles.emptyCard}
-          onPress={() => onAddPress(type)}
+          onPress={() => {
+            triggerLightImpact();
+            onAddPress(type);
+          }}
           activeOpacity={0.7}>
           <Text style={styles.emptyText}>No food logged • Tap + to add</Text>
         </TouchableOpacity>
@@ -61,7 +68,10 @@ export const MealCard = React.memo(function MealCard({
               <TouchableOpacity
                 key={item.id}
                 style={styles.itemCard}
-                onPress={() => onEditEntry && onEditEntry(item)}
+                onPress={() => {
+                  triggerLightImpact();
+                  if (onEditEntry) onEditEntry(item);
+                }}
                 activeOpacity={0.8}>
                 <Image
                   source={{ uri: item.imageUri || DEFAULT_FOOD_IMAGES[type] }}
@@ -103,6 +113,7 @@ export const MealCard = React.memo(function MealCard({
                 <TouchableOpacity
                   onPress={(e) => {
                     e.stopPropagation();
+                    triggerLightImpact();
                     onDeleteEntry(item.id);
                   }}
                   style={styles.deleteBtn}
@@ -117,6 +128,7 @@ export const MealCard = React.memo(function MealCard({
     </View>
   );
 });
+
 
 const styles = StyleSheet.create({
   container: {

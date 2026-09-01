@@ -266,18 +266,21 @@ export async function analyzeFoodImage(
   const validKey = (apiKey && apiKey.trim().length > 10) ? apiKey.trim() : (process.env.EXPO_PUBLIC_GEMINI_API_KEY || '');
 
   if (validKey && resolvedBase64) {
-    try {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${validKey}`;
+    const modelCandidates = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-3.6-flash'];
 
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                {
-                  text: `You are an expert AI nutritionist like Cal AI. Analyze the food in this image and provide a structured JSON response with exact macronutrients and calories.
+    for (const model of modelCandidates) {
+      try {
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${validKey}`;
+
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  {
+                    text: `You are an expert AI nutritionist like Cal AI. Analyze the food in this image and provide a structured JSON response with exact macronutrients and calories.
 Output STRICT JSON only matching this schema without markdown fences:
 {
   "foodName": "Descriptive Food Name",
@@ -291,50 +294,50 @@ Output STRICT JSON only matching this schema without markdown fences:
     { "item": "Main Ingredient", "portion": "150g", "calories": 250 }
   ]
 }`,
-                },
-                {
-                  inlineData: {
-                    mimeType: 'image/jpeg',
-                    data: resolvedBase64,
                   },
-                },
-              ],
-            },
-          ],
-          generationConfig: {
-            responseMimeType: 'application/json',
-            temperature: 0.2,
-          },
-        }),
-      });
-
-      if (response.ok) {
-        const json = await response.json();
-        const candidate = json.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (candidate) {
-          const cleanedText = candidate.replace(/```json/gi, '').replace(/```/g, '').trim();
-          const parsed = JSON.parse(cleanedText);
-          return {
-            foodName: parsed.foodName || 'Detected Meal',
-            calories: Math.round(Number(parsed.calories)) || 450,
-            protein: Math.round(Number(parsed.protein)) || 30,
-            carbs: Math.round(Number(parsed.carbs)) || 45,
-            fats: Math.round(Number(parsed.fats)) || 15,
-            servingSize: parsed.servingSize || '1 standard portion',
-            confidence: Number(parsed.confidence) || 0.96,
-            breakdown: parsed.breakdown || [
-              { item: parsed.foodName || 'Main Dish', portion: '1 serving', calories: Math.round(Number(parsed.calories)) || 450 },
+                  {
+                    inlineData: {
+                      mimeType: 'image/jpeg',
+                      data: resolvedBase64,
+                    },
+                  },
+                ],
+              },
             ],
-          };
+            generationConfig: {
+              responseMimeType: 'application/json',
+              temperature: 0.2,
+            },
+          }),
+        });
+
+        if (response.ok) {
+          const json = await response.json();
+          const candidate = json.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (candidate) {
+            const cleanedText = candidate.replace(/```json/gi, '').replace(/```/g, '').trim();
+            const parsed = JSON.parse(cleanedText);
+            return {
+              foodName: parsed.foodName || 'Detected Meal',
+              calories: Math.round(Number(parsed.calories)) || 450,
+              protein: Math.round(Number(parsed.protein)) || 30,
+              carbs: Math.round(Number(parsed.carbs)) || 45,
+              fats: Math.round(Number(parsed.fats)) || 15,
+              servingSize: parsed.servingSize || '1 standard portion',
+              confidence: Number(parsed.confidence) || 0.96,
+              breakdown: parsed.breakdown || [
+                { item: parsed.foodName || 'Main Dish', portion: '1 serving', calories: Math.round(Number(parsed.calories)) || 450 },
+              ],
+            };
+          }
         }
-      } else {
-        const err = await response.text();
-        console.warn('Gemini vision API response warning:', response.status, err);
+      } catch {
+        // Try next candidate model
+        continue;
       }
-    } catch (apiError) {
-      console.warn('Live Gemini API call notice, falling back to smart vision database:', apiError);
     }
   }
+
 
   // Artificial realistic processing delay for UX delight
   await new Promise((resolve) => setTimeout(resolve, 800));

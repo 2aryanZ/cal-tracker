@@ -47,7 +47,9 @@ export default function HistoryScreen() {
     logMeal,
     editMeal,
     removeMeal,
+    showToast,
   } = useNutrition();
+
 
 
   const [activeTab, setActiveTab] = useState<'calendar' | 'groups'>('calendar');
@@ -240,7 +242,9 @@ export default function HistoryScreen() {
         isAiGenerated: false,
       });
     }
+    showToast('Meals Copied! ⚡', `Copied ${dayEntries.length} meals to Today's tracker.`, 'sparkles');
   };
+
 
   const handleOpenAdd = (type: MealType) => {
     triggerLightImpact();

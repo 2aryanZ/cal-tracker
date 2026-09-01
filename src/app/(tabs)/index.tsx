@@ -270,7 +270,10 @@ export default function HomeScreen() {
           <View style={styles.waterQuickBtnsRow}>
             <TouchableOpacity
               style={styles.waterQuickBtn}
-              onPress={() => logWater(250)}
+              onPress={() => {
+                triggerLightImpact();
+                logWater(250);
+              }}
               activeOpacity={0.8}>
               <Plus size={12} color="#0284C7" />
               <Text style={styles.waterQuickBtnText}>+250 ml (Glass)</Text>
@@ -278,7 +281,10 @@ export default function HomeScreen() {
 
             <TouchableOpacity
               style={styles.waterQuickBtn}
-              onPress={() => logWater(500)}
+              onPress={() => {
+                triggerLightImpact();
+                logWater(500);
+              }}
               activeOpacity={0.8}>
               <Plus size={12} color="#0284C7" />
               <Text style={styles.waterQuickBtnText}>+500 ml (Bottle)</Text>
@@ -286,11 +292,15 @@ export default function HomeScreen() {
 
             <TouchableOpacity
               style={[styles.waterQuickBtn, { flex: 0.65, backgroundColor: 'rgba(2, 132, 199, 0.08)' }]}
-              onPress={() => logWater(-250)}
+              onPress={() => {
+                triggerLightImpact();
+                logWater(-250);
+              }}
               activeOpacity={0.8}>
               <Text style={[styles.waterQuickBtnText, { color: '#0284C7' }]}>-250 ml</Text>
             </TouchableOpacity>
           </View>
+
 
         </View>
 
