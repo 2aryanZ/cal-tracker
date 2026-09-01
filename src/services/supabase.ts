@@ -1,7 +1,11 @@
 import 'react-native-url-polyfill/auto';
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
 import { UserAccount, FoodEntry, WeightEntry, MacroTargets, UserProfile } from '@/types/nutrition';
+
+WebBrowser.maybeCompleteAuthSession();
 
 const SUPABASE_URL =
   process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://vzsbjffwhjikeeanrzdb.supabase.co';
@@ -133,11 +137,146 @@ export async function supabaseSignIn(
 }
 
 /**
+ * Sign in with Google OAuth via Supabase + Expo WebBrowser
+ */
+export async function supabaseSignInWithGoogle(): Promise<{ user: UserAccount | null; error?: string }> {
+  try {
+    const redirectUrl = Linking.createURL('/');
+
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: redirectUrl,
+        skipBrowserRedirect: true,
+      },
+    });
+
+    if (error) {
+      return { user: null, error: error.message };
+    }
+
+    if (data?.url) {
+      const res = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
+
+      if (res.type === 'success' && res.url) {
+        const url = res.url;
+        const hash = url.includes('#') ? url.split('#')[1] : url.includes('?') ? url.split('?')[1] : '';
+        const params = new URLSearchParams(hash);
+        const accessToken = params.get('access_token');
+        const refreshToken = params.get('refresh_token');
+
+        if (accessToken && refreshToken) {
+          const { data: sessionData, error: sessionErr } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+
+          if (sessionErr) {
+            return { user: null, error: sessionErr.message };
+          }
+
+          if (sessionData.user) {
+            const account: UserAccount = {
+              id: sessionData.user.id,
+              email: sessionData.user.email || '',
+              name:
+                sessionData.user.user_metadata?.full_name ||
+                sessionData.user.user_metadata?.name ||
+                sessionData.user.email?.split('@')[0] ||
+                'User',
+              isLoggedIn: true,
+              tier: 'Pro',
+              memberSince: new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+            };
+            return { user: account };
+          }
+        }
+      } else if (res.type === 'cancel' || res.type === 'dismiss') {
+        return { user: null, error: 'cancelled' };
+      }
+    }
+
+    return { user: null, error: 'Could not open Google authentication page.' };
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Google OAuth error';
+    return { user: null, error: errorMsg };
+  }
+}
+
+/**
+ * Sign in with Apple OAuth via Supabase + Expo WebBrowser
+ */
+export async function supabaseSignInWithApple(): Promise<{ user: UserAccount | null; error?: string }> {
+  try {
+    const redirectUrl = Linking.createURL('/');
+
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'apple',
+      options: {
+        redirectTo: redirectUrl,
+        skipBrowserRedirect: true,
+      },
+    });
+
+    if (error) {
+      return { user: null, error: error.message };
+    }
+
+    if (data?.url) {
+      const res = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
+
+      if (res.type === 'success' && res.url) {
+        const url = res.url;
+        const hash = url.includes('#') ? url.split('#')[1] : url.includes('?') ? url.split('?')[1] : '';
+        const params = new URLSearchParams(hash);
+        const accessToken = params.get('access_token');
+        const refreshToken = params.get('refresh_token');
+
+        if (accessToken && refreshToken) {
+          const { data: sessionData, error: sessionErr } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+
+          if (sessionErr) {
+            return { user: null, error: sessionErr.message };
+          }
+
+          if (sessionData.user) {
+            const account: UserAccount = {
+              id: sessionData.user.id,
+              email: sessionData.user.email || '',
+              name:
+                sessionData.user.user_metadata?.full_name ||
+                sessionData.user.user_metadata?.name ||
+                sessionData.user.email?.split('@')[0] ||
+                'User',
+              isLoggedIn: true,
+              tier: 'Pro',
+              memberSince: new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+            };
+            return { user: account };
+          }
+        }
+      } else if (res.type === 'cancel' || res.type === 'dismiss') {
+        return { user: null, error: 'cancelled' };
+      }
+    }
+
+    return { user: null, error: 'Could not open Apple authentication page.' };
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Apple OAuth error';
+    return { user: null, error: errorMsg };
+  }
+}
+
+/**
  * Sign out user from Supabase session
  */
 export async function supabaseSignOut(): Promise<void> {
   try {
     await supabase.auth.signOut();
+
   } catch (err) {
     console.warn('Supabase sign out notice:', err);
   }

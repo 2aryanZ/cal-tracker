@@ -46,6 +46,8 @@ import { scheduleMealReminders, sendInstantStreakCelebration } from '@/services/
 import {
   supabaseSignUp,
   supabaseSignOut,
+  supabaseSignInWithGoogle,
+  supabaseSignInWithApple,
   supabaseSyncFoodEntry,
   supabaseDeleteFoodEntry,
   supabaseSyncWaterLog,
@@ -57,6 +59,7 @@ import {
 
 import { playGoalChime } from '@/services/soundService';
 import { triggerGoalCelebrationHaptic, triggerSuccessFeedback, triggerLightImpact } from '@/services/hapticsService';
+
 
 interface RewardState {
   visible: boolean;
@@ -105,9 +108,12 @@ interface NutritionContextType {
   saveProfile: (profile: UserProfile, newGoals: MacroTargets) => Promise<void>;
   updateNotifications: (settings: NotificationSettings) => Promise<void>;
   signIn: (email: string, name?: string, password?: string) => Promise<void>;
+  signInWithGoogle: () => Promise<boolean>;
+  signInWithApple: () => Promise<boolean>;
   signOut: () => Promise<void>;
   updateAccount: (account: Partial<UserAccount>) => Promise<void>;
   syncCloudNow: () => Promise<void>;
+
   dismissReward: () => void;
   triggerManualReward: () => void;
   showToast: (title: string, message: string, icon?: string) => void;
@@ -375,12 +381,120 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const signInWithGoogle = async (): Promise<boolean> => {
+    setIsSyncing(true);
+    try {
+      const res = await supabaseSignInWithGoogle();
+      if (res.error === 'cancelled') {
+        return false;
+      }
+      if (res.error) {
+        throw new Error(res.error);
+      }
+      if (res.user) {
+        setUserAccount(res.user);
+        await saveUserAccount(res.user);
+
+        // Push local and pull cloud data
+        const currentWeights = await getWeightLogs();
+        await supabasePushLocalData({
+          entries,
+          weights: currentWeights,
+          waterLogs,
+          goals,
+          profile: userProfile,
+        });
+
+        const cloudData = await supabaseFetchAllUserData();
+        if (cloudData) {
+          if (cloudData.foodEntries && cloudData.foodEntries.length > 0) {
+            setEntries(cloudData.foodEntries);
+            await setAllFoodEntries(cloudData.foodEntries);
+          }
+          if (cloudData.waterLogs) {
+            const mergedWater = { ...waterLogs, ...cloudData.waterLogs };
+            setWaterLogsState(mergedWater);
+            await setAllWaterLogs(mergedWater);
+          }
+          if (cloudData.goals) {
+            setGoals(cloudData.goals);
+            await saveMacroGoals(cloudData.goals);
+          }
+          if (cloudData.profile) {
+            setUserProfile(cloudData.profile);
+            await saveUserProfile(cloudData.profile);
+          }
+        }
+
+        showToast('Welcome back! 👋', `Signed in with Google as ${res.user.name}`, 'sparkles');
+        return true;
+      }
+      return false;
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const signInWithApple = async (): Promise<boolean> => {
+    setIsSyncing(true);
+    try {
+      const res = await supabaseSignInWithApple();
+      if (res.error === 'cancelled') {
+        return false;
+      }
+      if (res.error) {
+        throw new Error(res.error);
+      }
+      if (res.user) {
+        setUserAccount(res.user);
+        await saveUserAccount(res.user);
+
+        const currentWeights = await getWeightLogs();
+        await supabasePushLocalData({
+          entries,
+          weights: currentWeights,
+          waterLogs,
+          goals,
+          profile: userProfile,
+        });
+
+        const cloudData = await supabaseFetchAllUserData();
+        if (cloudData) {
+          if (cloudData.foodEntries && cloudData.foodEntries.length > 0) {
+            setEntries(cloudData.foodEntries);
+            await setAllFoodEntries(cloudData.foodEntries);
+          }
+          if (cloudData.waterLogs) {
+            const mergedWater = { ...waterLogs, ...cloudData.waterLogs };
+            setWaterLogsState(mergedWater);
+            await setAllWaterLogs(mergedWater);
+          }
+          if (cloudData.goals) {
+            setGoals(cloudData.goals);
+            await saveMacroGoals(cloudData.goals);
+          }
+          if (cloudData.profile) {
+            setUserProfile(cloudData.profile);
+            await saveUserProfile(cloudData.profile);
+          }
+        }
+
+        showToast('Welcome back! 👋', `Signed in with Apple as ${res.user.name}`, 'sparkles');
+        return true;
+      }
+      return false;
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const signOut = async () => {
     await supabaseSignOut();
     const account = await signOutUser();
     setUserAccount(account);
     showToast('Signed Out', 'You are now browsing in guest mode.', 'sparkles');
   };
+
 
   const updateAccount = async (partial: Partial<UserAccount>) => {
     const updated = { ...userAccount, ...partial };
@@ -601,9 +715,12 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
         saveProfile,
         updateNotifications,
         signIn,
+        signInWithGoogle,
+        signInWithApple,
         signOut,
         updateAccount,
         syncCloudNow,
+
         dismissReward,
         triggerManualReward,
         showToast,

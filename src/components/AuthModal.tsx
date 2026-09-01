@@ -20,11 +20,12 @@ import {
   ArrowRight,
 } from 'lucide-react-native';
 import { PALETTE, FONTS } from '@/constants/theme';
+import { useNutrition } from '@/context/NutritionContext';
 
 interface AuthModalProps {
   visible: boolean;
   onClose: () => void;
-  onSignIn: (email: string, name?: string, password?: string) => void | Promise<void>;
+  onSignIn?: (email: string, name?: string, password?: string) => void | Promise<void>;
   initialStep?: 1 | 2 | 3;
 }
 
@@ -34,10 +35,13 @@ export function AuthModal({
   onSignIn,
   initialStep = 3,
 }: AuthModalProps) {
+  const { signInWithGoogle, signInWithApple, signIn } = useNutrition();
+
   const [step, setStep] = useState<1 | 2 | 3>(initialStep);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loadingProvider, setLoadingProvider] = useState<'email' | 'google' | 'apple' | 'demo' | null>(null);
 
   const handleConnect = async () => {
     if (!email || !email.includes('@')) {
@@ -46,27 +50,12 @@ export function AuthModal({
     }
 
     setIsSubmitting(true);
+    setLoadingProvider('email');
     try {
-      await onSignIn(email, email.split('@')[0], password || undefined);
-      onClose();
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Auth failed';
-      Alert.alert('Sign In Error', msg);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-
-  const handleSocialSignIn = async (provider: 'google' | 'apple' | 'demo') => {
-    setIsSubmitting(true);
-    try {
-      if (provider === 'google') {
-        await onSignIn('google.user@caltracker.app', 'Google User');
-      } else if (provider === 'apple') {
-        await onSignIn('apple.user@caltracker.app', 'Apple User');
+      if (onSignIn) {
+        await onSignIn(email, email.split('@')[0], password || undefined);
       } else {
-        await onSignIn('aryan@caltracker.app', 'Aryan');
+        await signIn(email, email.split('@')[0], password || undefined);
       }
       onClose();
     } catch (err: unknown) {
@@ -74,8 +63,51 @@ export function AuthModal({
       Alert.alert('Sign In Error', msg);
     } finally {
       setIsSubmitting(false);
+      setLoadingProvider(null);
     }
   };
+
+  const handleSocialSignIn = async (provider: 'google' | 'apple' | 'demo') => {
+    setIsSubmitting(true);
+    setLoadingProvider(provider);
+    try {
+      if (provider === 'google') {
+        const success = await signInWithGoogle();
+        if (success) {
+          onClose();
+        }
+      } else if (provider === 'apple') {
+        const success = await signInWithApple();
+        if (success) {
+          onClose();
+        }
+      } else {
+        if (onSignIn) {
+          await onSignIn('aryan@caltracker.app', 'Aryan');
+        } else {
+          await signIn('aryan@caltracker.app', 'Aryan');
+        }
+        onClose();
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Auth failed';
+      if (
+        msg.toLowerCase().includes('provider is not enabled') ||
+        msg.toLowerCase().includes('unsupported provider')
+      ) {
+        Alert.alert(
+          'Google Sign-In Configuration',
+          'Google OAuth is not yet enabled in your Supabase Dashboard.\n\nTo enable it:\n1. Go to your Supabase Project -> Authentication -> Providers\n2. Enable Google & paste your Google Client ID\n\nIn the meantime, you can log in directly with Email & Password or Demo Login!'
+        );
+      } else {
+        Alert.alert('Sign In Notice', msg);
+      }
+    } finally {
+      setIsSubmitting(false);
+      setLoadingProvider(null);
+    }
+  };
+
 
   if (!visible) return null;
 
@@ -275,31 +307,47 @@ export function AuthModal({
                   <TouchableOpacity
                     style={styles.socialBtn}
                     onPress={() => handleSocialSignIn('google')}
+                    disabled={isSubmitting}
                     activeOpacity={0.8}>
-                    <View style={styles.googleIconBadge}>
-                      <Text style={styles.googleIconText}>G</Text>
-                    </View>
-                    <Text style={styles.socialBtnText}>Sign in with Google</Text>
+                    {loadingProvider === 'google' ? (
+                      <ActivityIndicator size="small" color={PALETTE[950]} />
+                    ) : (
+                      <>
+                        <View style={styles.googleIconBadge}>
+                          <Text style={styles.googleIconText}>G</Text>
+                        </View>
+                        <Text style={styles.socialBtnText}>Sign in with Google</Text>
+                      </>
+                    )}
                   </TouchableOpacity>
 
-                  {/* Apple / Facebook */}
+                  {/* Apple */}
                   <TouchableOpacity
                     style={styles.socialBtn}
                     onPress={() => handleSocialSignIn('apple')}
+                    disabled={isSubmitting}
                     activeOpacity={0.8}>
-                    <Text style={{ fontSize: 16 }}></Text>
-                    <Text style={styles.socialBtnText}>Sign in with Apple</Text>
+                    {loadingProvider === 'apple' ? (
+                      <ActivityIndicator size="small" color={PALETTE[950]} />
+                    ) : (
+                      <>
+                        <Text style={{ fontSize: 16 }}></Text>
+                        <Text style={styles.socialBtnText}>Sign in with Apple</Text>
+                      </>
+                    )}
                   </TouchableOpacity>
 
                   {/* Quick Demo Pro Login */}
                   <TouchableOpacity
                     style={styles.demoPillBtn}
                     onPress={() => handleSocialSignIn('demo')}
+                    disabled={isSubmitting}
                     activeOpacity={0.8}>
                     <ShieldCheck size={14} color={PALETTE[700]} />
                     <Text style={styles.demoPillText}>One-Tap Demo Login (Aryan • Pro)</Text>
                   </TouchableOpacity>
                 </View>
+
 
                 {/* Privacy Policy Footer */}
                 <Text style={styles.privacyFooterText}>
