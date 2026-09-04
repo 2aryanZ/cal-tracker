@@ -238,7 +238,7 @@ export default function ScanScreen() {
         {permission?.granted ? (
           <CameraView
             ref={cameraRef}
-            style={StyleSheet.absoluteFillObject}
+            style={StyleSheet.absoluteFill}
             facing={facing}
             enableTorch={torch}
             barcodeScannerSettings={
@@ -266,7 +266,7 @@ export default function ScanScreen() {
           <View style={styles.permissionFallback}>
             <Image
               source={{ uri: selectedImage }}
-              style={StyleSheet.absoluteFillObject}
+              style={StyleSheet.absoluteFill}
               cachePolicy="memory-disk"
               transition={150}
             />
@@ -493,7 +493,7 @@ const styles = StyleSheet.create({
     marginBottom: Platform.OS === 'ios' ? 18 : 12,
   },
   permissionFallback: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -667,7 +667,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   reticleOverlayContainer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: 'center',
     alignItems: 'center',
     paddingBottom: 110,

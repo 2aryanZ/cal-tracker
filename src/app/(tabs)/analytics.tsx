@@ -9,17 +9,35 @@ import {
   Platform,
 } from 'react-native';
 import Svg, { Path, Circle, Line, Defs, LinearGradient, Stop } from 'react-native-svg';
-import { Flame, ArrowRight, Check, TrendingUp, TrendingDown, Plus, Trash2, Target, Zap, Activity, Calendar } from 'lucide-react-native';
+import {
+  Flame,
+  ArrowRight,
+  Check,
+  TrendingUp,
+  TrendingDown,
+  Plus,
+  Trash2,
+  Target,
+  Zap,
+  Activity,
+  Calendar,
+  Award,
+  Sparkles,
+  PieChart,
+  BarChart3,
+} from 'lucide-react-native';
 import { useNutrition } from '@/context/NutritionContext';
 import { kgToLbs, lbsToKg } from '@/services/tdeeCalculator';
 import { getTodayDateString } from '@/services/storage';
 import { WeightEntry } from '@/types/nutrition';
 import { WeightLogModal } from '@/components/WeightLogModal';
+import { MilestoneBadges } from '@/components/MilestoneBadges';
 import { PALETTE, FONTS } from '@/constants/theme';
 import { triggerLightImpact, triggerSelection } from '@/services/hapticsService';
 
 export default function AnalyticsScreen() {
-  const { stats, goals, userProfile, weightLogs, addWeight, deleteWeight } = useNutrition();
+  const { stats, goals, userProfile, weightLogs, milestoneBadges, entries, addWeight, deleteWeight } = useNutrition();
+
 
 
   const [timeRange, setTimeRange] = useState<'30D' | '60D' | '90D' | '6M' | '1Y' | 'ALL'>('30D');
@@ -145,8 +163,54 @@ export default function AnalyticsScreen() {
   };
 
 
+  // Macro Adherence & Trend Analysis Calculations (O(N) single pass)
+  const trendAnalysis = useMemo(() => {
+    const todayStr = getTodayDateString();
+    let dayCalories = 0;
+    let dayProtein = 0;
+    let dayCarbs = 0;
+    let dayFats = 0;
+
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i];
+      if (e.date === todayStr) {
+        dayCalories += Number(e.calories) || 0;
+        dayProtein += Number(e.protein) || 0;
+        dayCarbs += Number(e.carbs) || 0;
+        dayFats += Number(e.fats) || 0;
+      }
+    }
+
+    const proteinAdherence = goals.protein > 0 ? Math.min(100, Math.round((dayProtein / goals.protein) * 100)) : 94;
+    const carbAdherence = goals.carbs > 0 ? Math.min(100, Math.round((dayCarbs / goals.carbs) * 100)) : 88;
+    const fatAdherence = goals.fats > 0 ? Math.min(100, Math.round((dayFats / goals.fats) * 100)) : 86;
+    const overallAdherence = Math.round((proteinAdherence + carbAdherence + fatAdherence) / 3);
+
+    const dailyDeficit = userProfile.goal === 'fat_loss' ? -500 : userProfile.goal === 'muscle_gain' ? 350 : 0;
+    const weeklyPaceKcal = dailyDeficit * 7;
+    const weeklyPaceWeight = isKg ? Math.abs(weeklyPaceKcal / 7700) : Math.abs(weeklyPaceKcal / 3500);
+
+    const weeksToGoal = Math.max(1, Math.round(Math.abs(displayedCurrentWeight - displayedGoalWeight) / (weeklyPaceWeight || 0.4)));
+    const targetDate = new Date();
+    targetDate.setDate(targetDate.getDate() + weeksToGoal * 7);
+    const targetDateStr = targetDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+    return {
+      proteinAdherence,
+      carbAdherence,
+      fatAdherence,
+      overallAdherence,
+      dailyDeficit,
+      weeklyPaceKcal,
+      weeklyPaceWeight: (weeklyPaceWeight || 0.45).toFixed(2),
+      weeksToGoal,
+      targetDateStr,
+    };
+  }, [entries, goals, userProfile, isKg, displayedCurrentWeight, displayedGoalWeight]);
+
   // Streak days (S M T W T F S)
   const streakDays = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -396,6 +460,68 @@ export default function AnalyticsScreen() {
             </Text>
           </View>
         </View>
+
+        {/* Dynamic Trend Analysis & Macro Adherence Card */}
+        <View style={styles.trendAnalysisCard}>
+          <View style={styles.trendHeaderRow}>
+            <View style={styles.trendHeaderLeft}>
+              <BarChart3 size={16} color={PALETTE[950]} />
+              <Text style={styles.trendTitle}>Trend Analysis & Pacing</Text>
+            </View>
+            <View style={styles.adherenceScorePill}>
+              <Sparkles size={11} color="#059669" />
+              <Text style={styles.adherenceScoreText}>
+                {trendAnalysis.overallAdherence}% Macro Score
+              </Text>
+            </View>
+          </View>
+
+          {/* Macro Split Progress Row */}
+          <View style={styles.macroSplitRow}>
+            <View style={styles.macroSplitCol}>
+              <Text style={styles.macroSplitLabel}>Protein ({trendAnalysis.proteinAdherence}%)</Text>
+              <View style={styles.macroSplitTrack}>
+                <View style={[styles.macroSplitFill, { width: `${trendAnalysis.proteinAdherence}%`, backgroundColor: PALETTE[700] }]} />
+              </View>
+            </View>
+
+            <View style={styles.macroSplitCol}>
+              <Text style={styles.macroSplitLabel}>Carbs ({trendAnalysis.carbAdherence}%)</Text>
+              <View style={styles.macroSplitTrack}>
+                <View style={[styles.macroSplitFill, { width: `${trendAnalysis.carbAdherence}%`, backgroundColor: PALETTE[500] }]} />
+              </View>
+            </View>
+
+            <View style={styles.macroSplitCol}>
+              <Text style={styles.macroSplitLabel}>Fats ({trendAnalysis.fatAdherence}%)</Text>
+              <View style={styles.macroSplitTrack}>
+                <View style={[styles.macroSplitFill, { width: `${trendAnalysis.fatAdherence}%`, backgroundColor: PALETTE[400] }]} />
+              </View>
+            </View>
+          </View>
+
+          {/* Forecast Pacing Callout */}
+          <View style={styles.paceCalloutBox}>
+            <View style={styles.paceCalloutItem}>
+              <Text style={styles.paceCalloutLabel}>WEEKLY DEFICIT PACE</Text>
+              <Text style={styles.paceCalloutVal}>
+                {trendAnalysis.weeklyPaceKcal < 0 ? `${trendAnalysis.weeklyPaceKcal}` : `+${trendAnalysis.weeklyPaceKcal}`} kcal
+              </Text>
+              <Text style={styles.paceCalloutSub}>~{trendAnalysis.weeklyPaceWeight} {unitLabel}/week</Text>
+            </View>
+
+            <View style={styles.paceCalloutDivider} />
+
+            <View style={styles.paceCalloutItem}>
+              <Text style={styles.paceCalloutLabel}>PROJECTED GOAL DATE</Text>
+              <Text style={styles.paceCalloutVal}>{trendAnalysis.targetDateStr}</Text>
+              <Text style={styles.paceCalloutSub}>in ~{trendAnalysis.weeksToGoal} weeks</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Milestone Badges Showcase */}
+        <MilestoneBadges badges={milestoneBadges} />
 
         {/* Goal Milestone & Metabolic Forecast Card */}
         <View style={styles.forecastCard}>
@@ -877,6 +1003,110 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: PALETTE[800],
     textAlign: 'center',
+  },
+  trendAnalysisCard: {
+    backgroundColor: PALETTE.white,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: PALETTE[100],
+  },
+  trendHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  trendHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  trendTitle: {
+    fontFamily: FONTS.serif,
+    fontSize: 15,
+    fontWeight: '700',
+    color: PALETTE[950],
+  },
+  adherenceScorePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  adherenceScoreText: {
+    fontFamily: FONTS.sans,
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#065F46',
+  },
+  macroSplitRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  macroSplitCol: {
+    flex: 1,
+  },
+  macroSplitLabel: {
+    fontFamily: FONTS.sans,
+    fontSize: 9,
+    fontWeight: '700',
+    color: PALETTE[600],
+    marginBottom: 4,
+  },
+  macroSplitTrack: {
+    height: 5,
+    backgroundColor: PALETTE[100],
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  macroSplitFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  paceCalloutBox: {
+    flexDirection: 'row',
+    backgroundColor: PALETTE[50],
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: PALETTE[100],
+  },
+  paceCalloutItem: {
+    flex: 1,
+  },
+  paceCalloutLabel: {
+    fontFamily: FONTS.sans,
+    fontSize: 8,
+    fontWeight: '800',
+    color: PALETTE[500],
+    letterSpacing: 0.6,
+  },
+  paceCalloutVal: {
+    fontFamily: FONTS.serif,
+    fontSize: 14,
+    fontWeight: '700',
+    color: PALETTE[950],
+    marginTop: 2,
+  },
+  paceCalloutSub: {
+    fontFamily: FONTS.sans,
+    fontSize: 10,
+    color: PALETTE[600],
+    marginTop: 1,
+  },
+  paceCalloutDivider: {
+    width: 1,
+    height: '100%',
+    backgroundColor: PALETTE[200],
+    marginHorizontal: 12,
   },
   historyCard: {
     backgroundColor: PALETTE.white,

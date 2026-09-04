@@ -1,4 +1,4 @@
-import { Audio } from 'expo-av';
+import { createAudioPlayer } from 'expo-audio';
 import { Platform } from 'react-native';
 
 /**
@@ -6,11 +6,9 @@ import { Platform } from 'react-native';
  * Plays high-quality audio chimes for goal completion and interactive milestones.
  */
 
-// Embedded clean success chime sound base64 URI (MP3 format)
+// Embedded clean success chime sound URI (MP3 format)
 const SUCCESS_CHIME_URI =
   'https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3'; // Uplifting positive success chime
-
-let chimeSoundObject: Audio.Sound | null = null;
 
 export async function playGoalChime(): Promise<void> {
   try {
@@ -44,29 +42,18 @@ export async function playGoalChime(): Promise<void> {
       return;
     }
 
-    // Native Mobile Audio
-    await Audio.setAudioModeAsync({
-      playsInSilentModeIOS: true,
-      staysActiveInBackground: false,
-    });
-
-    if (chimeSoundObject) {
-      await chimeSoundObject.unloadAsync();
-      chimeSoundObject = null;
-    }
-
-    const { sound } = await Audio.Sound.createAsync(
-      { uri: SUCCESS_CHIME_URI },
-      { shouldPlay: true, volume: 0.85 }
-    );
-
-    chimeSoundObject = sound;
-    sound.setOnPlaybackStatusUpdate((status) => {
-      if (status.isLoaded && status.didJustFinish) {
-        sound.unloadAsync().catch(() => {});
+    // Native Mobile Audio with Expo 57 expo-audio (reused instance for instant playback & zero memory leaks)
+    if (!cachedPlayer) {
+      cachedPlayer = createAudioPlayer({ uri: SUCCESS_CHIME_URI });
+    } else {
+      if (typeof cachedPlayer.seekTo === 'function') {
+        cachedPlayer.seekTo(0);
       }
-    });
+    }
+    cachedPlayer.play();
   } catch (err) {
     console.warn('Audio chime playback notice:', err);
   }
 }
+
+let cachedPlayer: any = null;

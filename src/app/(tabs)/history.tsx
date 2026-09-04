@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,8 @@ import {
   Platform,
   Modal,
   PanResponder,
+  TextInput,
+  Alert,
 } from 'react-native';
 import {
   ChevronLeft,
@@ -26,12 +28,20 @@ import {
   BarChart2,
   CalendarDays,
   Sparkles,
+  Repeat,
+  Star,
+  Plus,
+  Clock,
+  Zap,
+  Users,
+  Flame,
+  ShieldCheck,
 } from 'lucide-react-native';
 import { useNutrition } from '@/context/NutritionContext';
 import { MealCard } from '@/components/MealCard';
 import { MealResultModal } from '@/components/MealResultModal';
-import { formatDateLabel, getTodayDateString } from '@/services/storage';
-import { MealType, AiFoodDetectionResult, FoodEntry } from '@/types/nutrition';
+import { formatDateLabel, getTodayDateString, getCommunityGroups, saveCommunityGroups, DEFAULT_COMMUNITY_GROUPS } from '@/services/storage';
+import { MealType, AiFoodDetectionResult, FoodEntry, CommunityGroup } from '@/types/nutrition';
 import { PALETTE, FONTS } from '@/constants/theme';
 import { triggerSelection, triggerLightImpact, triggerSuccessFeedback } from '@/services/hapticsService';
 
@@ -43,6 +53,8 @@ export default function HistoryScreen() {
     selectedDate,
     setSelectedDate,
     goals,
+    consumed,
+    remaining,
     waterMl,
     logMeal,
     editMeal,
@@ -50,15 +62,78 @@ export default function HistoryScreen() {
     showToast,
   } = useNutrition();
 
-
-
-  const [activeTab, setActiveTab] = useState<'calendar' | 'groups'>('calendar');
+  const [activeTab, setActiveTab] = useState<'groups' | 'calendar'>('groups');
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [isViewSelectorOpen, setIsViewSelectorOpen] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [activeMealType, setActiveMealType] = useState<MealType>('lunch');
   const [editingEntry, setEditingEntry] = useState<FoodEntry | null>(null);
   const [sampleResult, setSampleResult] = useState<AiFoodDetectionResult | null>(null);
+
+  // Community Groups State
+  const [groups, setGroups] = useState<CommunityGroup[]>(DEFAULT_COMMUNITY_GROUPS);
+  const [createGroupModal, setCreateGroupModal] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [newGroupGoal, setNewGroupGoal] = useState('');
+  const [newGroupEmoji, setNewGroupEmoji] = useState('🔥');
+
+  useEffect(() => {
+    getCommunityGroups().then((stored) => {
+      if (stored && stored.length > 0) {
+        setGroups(stored);
+      }
+    });
+  }, []);
+
+  const handleToggleJoin = async (groupId: string) => {
+    triggerSuccessFeedback();
+    const updated = groups.map((g) => {
+      if (g.id === groupId) {
+        const nextJoined = !g.isJoined;
+        return {
+          ...g,
+          isJoined: nextJoined,
+          membersCount: nextJoined ? g.membersCount + 1 : Math.max(1, g.membersCount - 1),
+        };
+      }
+      return g;
+    });
+    setGroups(updated);
+    await saveCommunityGroups(updated);
+    const target = updated.find((g) => g.id === groupId);
+    if (target?.isJoined) {
+      showToast('Joined Group! 🎉', `You are now active in "${target.name}".`, 'sparkles');
+    } else {
+      showToast('Left Group', `Removed from "${target?.name}".`, 'sparkles');
+    }
+  };
+
+  const handleCreateGroup = async () => {
+    if (!newGroupName.trim()) {
+      Alert.alert('Group Name', 'Please enter a group name.');
+      return;
+    }
+    triggerSuccessFeedback();
+    const newGroup: CommunityGroup = {
+      id: `grp_${Date.now()}`,
+      name: newGroupName.trim(),
+      description: newGroupGoal.trim() || 'Daily nutrition & accountability challenge',
+      emoji: newGroupEmoji || '🎯',
+      category: 'deficit',
+      membersCount: 1,
+      activeTodayPct: 100,
+      isJoined: true,
+      streakDays: 1,
+      dailyGoal: newGroupGoal.trim() || 'Daily Goal',
+    };
+    const updated = [newGroup, ...groups];
+    setGroups(updated);
+    await saveCommunityGroups(updated);
+    setNewGroupName('');
+    setNewGroupGoal('');
+    setCreateGroupModal(false);
+    showToast('Group Created! 🏆', `"${newGroup.name}" is now in your active groups.`, 'sparkles');
+  };
 
   // Active month in Month View
   const [calendarMonth, setCalendarMonth] = useState(() => {
@@ -297,64 +372,154 @@ export default function HistoryScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* View / Range Selector Button ("Today" with Dropdown indicator) */}
-        <TouchableOpacity
-          style={styles.todayButton}
-          onPress={() => {
-            triggerLightImpact();
-            setIsViewSelectorOpen(true);
-          }}
-          activeOpacity={0.85}>
-          <CalendarIcon size={13} color={PALETTE[950]} />
-          <Text style={styles.todayBtnText}>
-            {selectedDate === getTodayDateString() ? 'Today' : viewMode === 'week' ? 'Week' : viewMode === 'month' ? 'Month' : formatDateLabel(selectedDate)}
-          </Text>
-          <ChevronDown size={12} color={PALETTE[600]} />
-        </TouchableOpacity>
+        {/* Right Header Action: '+ Create Group' when in Groups tab, or Date selector when in Calendar */}
+        {activeTab === 'groups' ? (
+          <TouchableOpacity
+            style={styles.createGroupHeaderBtn}
+            onPress={() => {
+              triggerLightImpact();
+              setCreateGroupModal(true);
+            }}
+            activeOpacity={0.85}>
+            <Plus size={14} color={PALETTE.white} />
+            <Text style={styles.createGroupHeaderBtnText}>New Group</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={styles.todayButton}
+            onPress={() => {
+              triggerLightImpact();
+              setIsViewSelectorOpen(true);
+            }}
+            activeOpacity={0.85}>
+            <CalendarIcon size={13} color={PALETTE[950]} />
+            <Text style={styles.todayBtnText}>
+              {selectedDate === getTodayDateString() ? 'Today' : viewMode === 'week' ? 'Week' : viewMode === 'month' ? 'Month' : formatDateLabel(selectedDate)}
+            </Text>
+            <ChevronDown size={12} color={PALETTE[600]} />
+          </TouchableOpacity>
+        )}
       </View>
 
       {activeTab === 'groups' ? (
-        <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollContent}>
+        <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           {/* Groups Hero Card */}
           <View style={styles.groupHeroCard}>
             <View style={styles.groupHeroLeft}>
+              <View style={styles.heroBadgeRow}>
+                <Flame size={13} color="#EA580C" />
+                <Text style={styles.heroBadgeText}>ACCOUNTABILITY PODS</Text>
+              </View>
               <Text style={styles.groupHeroTitle}>Streak Challenges</Text>
-              <Text style={styles.groupHeroSub}>Compete with friends & stay accountable together</Text>
+              <Text style={styles.groupHeroSub}>
+                Shared accountability boosts meal tracking consistency by 3.4x.
+              </Text>
             </View>
-            <Trophy size={28} color={PALETTE[700]} />
-          </View>
-
-          {/* Group 1 */}
-          <View style={styles.communityCard}>
-            <View style={styles.commTop}>
-              <View style={styles.commAvatar}>
-                <Text style={{ fontSize: 16 }}>🎯</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.commName}>10k Steps & Clean Eating</Text>
-                <Text style={styles.commSub}>1,420 members • 84% active today</Text>
-              </View>
-              <View style={styles.joinedBadge}>
-                <Text style={styles.joinedText}>Joined</Text>
-              </View>
+            <View style={styles.trophyCircle}>
+              <Trophy size={26} color={PALETTE[950]} />
             </View>
           </View>
 
-          {/* Group 2 */}
-          <View style={styles.communityCard}>
-            <View style={styles.commTop}>
-              <View style={styles.commAvatar}>
-                <Text style={{ fontSize: 16 }}>⚡</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.commName}>High Protein Bulk & Cut</Text>
-                <Text style={styles.commSub}>3,850 members • 91% active today</Text>
-              </View>
-              <View style={styles.joinedBadge}>
-                <Text style={styles.joinedText}>Joined</Text>
-              </View>
-            </View>
+          {/* User's Joined Groups */}
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitleText}>
+              YOUR ACTIVE GROUPS ({groups.filter((g) => g.isJoined).length})
+            </Text>
+            <TouchableOpacity
+              onPress={() => {
+                triggerLightImpact();
+                setCreateGroupModal(true);
+              }}
+              style={styles.addInlineBtn}>
+              <Plus size={12} color={PALETTE[950]} />
+              <Text style={styles.addInlineBtnText}>Create Group</Text>
+            </TouchableOpacity>
           </View>
+
+          {groups.filter((g) => g.isJoined).length === 0 ? (
+            <View style={styles.emptyGroupsCard}>
+              <Text style={styles.emptyGroupsEmoji}>🤝</Text>
+              <Text style={styles.emptyGroupsTitle}>No active groups yet</Text>
+              <Text style={styles.emptyGroupsSub}>
+                Join one of the recommended challenges below or create your own custom group!
+              </Text>
+            </View>
+          ) : (
+            groups
+              .filter((g) => g.isJoined)
+              .map((grp) => (
+                <View key={grp.id} style={styles.joinedGroupCard}>
+                  <View style={styles.commTop}>
+                    <View style={styles.commAvatar}>
+                      <Text style={{ fontSize: 22 }}>{grp.emoji}</Text>
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={styles.commName}>{grp.name}</Text>
+                        <ShieldCheck size={14} color="#059669" />
+                      </View>
+                      <Text style={styles.commGoalText}>🎯 Goal: {grp.dailyGoal}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.leavePillBtn}
+                      onPress={() => handleToggleJoin(grp.id)}
+                      activeOpacity={0.8}>
+                      <Text style={styles.leavePillText}>Joined</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={styles.groupStatsDivider} />
+
+                  <View style={styles.groupStatsRow}>
+                    <View style={styles.groupStatItem}>
+                      <Users size={12} color={PALETTE[600]} />
+                      <Text style={styles.groupStatText}>{grp.membersCount.toLocaleString()} members</Text>
+                    </View>
+                    <View style={styles.groupStatItem}>
+                      <Flame size={12} color="#EA580C" />
+                      <Text style={styles.groupStatText}>{grp.streakDays}d streak</Text>
+                    </View>
+                    <View style={styles.groupStatItem}>
+                      <Text style={[styles.groupStatText, { color: '#059669', fontWeight: '700' }]}>
+                        {grp.activeTodayPct}% active today
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              ))
+          )}
+
+          {/* Suggested Groups Shelf */}
+          <View style={[styles.sectionHeaderRow, { marginTop: 24 }]}>
+            <Text style={styles.sectionTitleText}>SUGGESTIONS TO JOIN</Text>
+            <Text style={styles.sectionTitleSub}>Tap + to join</Text>
+          </View>
+
+          {groups
+            .filter((g) => !g.isJoined)
+            .map((grp) => (
+              <View key={grp.id} style={styles.suggestedGroupCard}>
+                <View style={styles.commAvatarSmall}>
+                  <Text style={{ fontSize: 20 }}>{grp.emoji}</Text>
+                </View>
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={styles.suggestedGroupName}>{grp.name}</Text>
+                  <Text style={styles.suggestedGroupGoal}>{grp.description}</Text>
+                  <Text style={styles.suggestedGroupMeta}>
+                    {grp.membersCount.toLocaleString()} members • {grp.activeTodayPct}% active today
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.joinBtn}
+                  onPress={() => handleToggleJoin(grp.id)}
+                  activeOpacity={0.85}>
+                  <Plus size={13} color={PALETTE.white} />
+                  <Text style={styles.joinBtnText}>Join</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+
+          <View style={{ height: 40 }} />
         </ScrollView>
       ) : (
         <>
@@ -831,6 +996,77 @@ export default function HistoryScreen() {
           }
         }}
       />
+
+      {/* ============================================================ */}
+      {/* CREATE NEW COMMUNITY GROUP MODAL */}
+      {/* ============================================================ */}
+      <Modal
+        visible={createGroupModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setCreateGroupModal(false)}>
+        <View style={styles.createModalOverlay}>
+          <View style={styles.createModalCard}>
+            <View style={styles.createModalHeader}>
+              <View style={styles.createModalTitleRow}>
+                <Users size={18} color={PALETTE[950]} />
+                <Text style={styles.createModalTitle}>Create a Group</Text>
+              </View>
+              <TouchableOpacity onPress={() => setCreateGroupModal(false)} style={styles.createModalClose}>
+                <X size={16} color={PALETTE[950]} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.createModalSub}>
+              Start a shared nutrition streak with friends or your fitness community.
+            </Text>
+
+            {/* Emoji Selector */}
+            <Text style={styles.inputLabel}>CHOOSE GROUP ICON</Text>
+            <View style={styles.emojiPickerRow}>
+              {['🥩', '🔥', '🥑', '💧', '🏃', '🎯', '⚡', '🥗', '🏋️'].map((em) => (
+                <TouchableOpacity
+                  key={em}
+                  style={[styles.emojiOption, newGroupEmoji === em && styles.emojiOptionActive]}
+                  onPress={() => {
+                    triggerSelection();
+                    setNewGroupEmoji(em);
+                  }}>
+                  <Text style={{ fontSize: 20 }}>{em}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Group Name Input */}
+            <Text style={styles.inputLabel}>GROUP NAME</Text>
+            <TextInput
+              value={newGroupName}
+              onChangeText={setNewGroupName}
+              placeholder="e.g. 100-Day Calorie Cutters"
+              placeholderTextColor={PALETTE[400]}
+              style={styles.groupInput}
+            />
+
+            {/* Daily Goal Input */}
+            <Text style={styles.inputLabel}>DAILY NUTRITION OR ACTIVITY GOAL</Text>
+            <TextInput
+              value={newGroupGoal}
+              onChangeText={setNewGroupGoal}
+              placeholder="e.g. Hit 150g Protein or 500 kcal Deficit"
+              placeholderTextColor={PALETTE[400]}
+              style={styles.groupInput}
+            />
+
+            {/* Submit Action */}
+            <TouchableOpacity
+              style={styles.createGroupSubmitBtn}
+              onPress={handleCreateGroup}
+              activeOpacity={0.85}>
+              <Text style={styles.createGroupSubmitText}>Create & Join Group</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1101,6 +1337,169 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: PALETTE[700],
   },
+  repeatYesterdaySection: {
+    backgroundColor: PALETTE.white,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: PALETTE[100],
+  },
+  repeatHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  repeatTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  repeatTitle: {
+    fontFamily: FONTS.serif,
+    fontSize: 13,
+    fontWeight: '700',
+    color: PALETTE[950],
+  },
+  repeatSub: {
+    fontFamily: FONTS.sans,
+    fontSize: 9,
+    color: PALETTE[500],
+  },
+  repeatBtnsRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  repeatBtn: {
+    flex: 1,
+    backgroundColor: PALETTE[50],
+    paddingVertical: 7,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: PALETTE[200],
+  },
+  repeatBtnText: {
+    fontFamily: FONTS.sans,
+    fontSize: 11,
+    fontWeight: '700',
+    color: PALETTE[950],
+  },
+  shelfCard: {
+    backgroundColor: PALETTE.white,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: PALETTE[100],
+  },
+  shelfHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  shelfTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  shelfTitle: {
+    fontFamily: FONTS.serif,
+    fontSize: 13,
+    fontWeight: '700',
+    color: PALETTE[950],
+  },
+  shelfSub: {
+    fontFamily: FONTS.sans,
+    fontSize: 10,
+    color: PALETTE[500],
+  },
+  shelfScroll: {
+    gap: 8,
+  },
+  shelfChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: PALETTE[50],
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: PALETTE[200],
+    minWidth: 130,
+  },
+  shelfChipName: {
+    fontFamily: FONTS.sans,
+    fontSize: 11,
+    fontWeight: '700',
+    color: PALETTE[950],
+    maxWidth: 110,
+  },
+  shelfChipMacros: {
+    fontFamily: FONTS.sans,
+    fontSize: 9,
+    color: PALETTE[600],
+    marginTop: 1,
+  },
+  suggestionsCard: {
+    backgroundColor: '#F8FCFB',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: PALETTE[200],
+  },
+  suggestionsHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  suggestionsTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  suggestionsTitle: {
+    fontFamily: FONTS.serif,
+    fontSize: 13,
+    fontWeight: '700',
+    color: PALETTE[950],
+  },
+  suggestionsSub: {
+    fontFamily: FONTS.sans,
+    fontSize: 10,
+    color: PALETTE[600],
+  },
+  suggestionsGrid: {
+    gap: 6,
+  },
+  suggestionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: PALETTE.white,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: PALETTE[100],
+  },
+  sugName: {
+    fontFamily: FONTS.sans,
+    fontSize: 11,
+    fontWeight: '700',
+    color: PALETTE[950],
+  },
+  sugSub: {
+    fontFamily: FONTS.sans,
+    fontSize: 9,
+    color: PALETTE[600],
+    marginTop: 1,
+  },
   weekOverviewCard: {
     backgroundColor: PALETTE.white,
     borderRadius: 16,
@@ -1349,44 +1748,153 @@ const styles = StyleSheet.create({
     color: PALETTE[600],
     marginTop: 1,
   },
+  createGroupHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: PALETTE[950],
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
+  },
+  createGroupHeaderBtnText: {
+    fontFamily: FONTS.sans,
+    fontSize: 12,
+    fontWeight: '700',
+    color: PALETTE.white,
+  },
   groupHeroCard: {
-    backgroundColor: PALETTE[100],
-    borderRadius: 16,
+    backgroundColor: PALETTE.white,
+    borderRadius: 18,
     padding: 18,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: PALETTE[100],
+    shadowColor: PALETTE[950],
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
   groupHeroLeft: {
     flex: 1,
     marginRight: 12,
   },
+  heroBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginBottom: 6,
+  },
+  heroBadgeText: {
+    fontFamily: FONTS.sans,
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#EA580C',
+    letterSpacing: 0.5,
+  },
   groupHeroTitle: {
     fontFamily: FONTS.serif,
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '800',
     color: PALETTE[950],
     marginBottom: 4,
   },
   groupHeroSub: {
     fontFamily: FONTS.sans,
     fontSize: 12,
-    color: PALETTE[700],
-    lineHeight: 16,
+    color: PALETTE[600],
+    lineHeight: 17,
   },
-  communityCard: {
+  trophyCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: PALETTE[100],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    paddingHorizontal: 2,
+  },
+  sectionTitleText: {
+    fontFamily: FONTS.sans,
+    fontSize: 11,
+    fontWeight: '800',
+    color: PALETTE[500],
+    letterSpacing: 0.8,
+  },
+  sectionTitleSub: {
+    fontFamily: FONTS.sans,
+    fontSize: 11,
+    color: PALETTE[400],
+  },
+  addInlineBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: PALETTE[100],
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  addInlineBtnText: {
+    fontFamily: FONTS.sans,
+    fontSize: 11,
+    fontWeight: '700',
+    color: PALETTE[950],
+  },
+  emptyGroupsCard: {
     backgroundColor: PALETTE.white,
     borderRadius: 16,
-    padding: 14,
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: PALETTE[100],
+    marginBottom: 16,
+  },
+  emptyGroupsEmoji: {
+    fontSize: 32,
+    marginBottom: 8,
+  },
+  emptyGroupsTitle: {
+    fontFamily: FONTS.serif,
+    fontSize: 15,
+    fontWeight: '700',
+    color: PALETTE[950],
+    marginBottom: 4,
+  },
+  emptyGroupsSub: {
+    fontFamily: FONTS.sans,
+    fontSize: 12,
+    color: PALETTE[500],
+    textAlign: 'center',
+    lineHeight: 16,
+  },
+  joinedGroupCard: {
+    backgroundColor: PALETTE.white,
+    borderRadius: 16,
+    padding: 16,
     marginBottom: 12,
     borderWidth: 1,
     borderColor: PALETTE[100],
+    shadowColor: PALETTE[950],
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
   },
   commTop: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
   },
   commAvatar: {
     width: 44,
@@ -1396,7 +1904,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: PALETTE[100],
+    borderColor: PALETTE[200],
   },
   commName: {
     fontFamily: FONTS.serif,
@@ -1404,22 +1912,194 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: PALETTE[950],
   },
-  commSub: {
+  commGoalText: {
     fontFamily: FONTS.sans,
     fontSize: 11,
+    color: PALETTE[600],
+    marginTop: 2,
+    fontWeight: '600',
+  },
+  leavePillBtn: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  leavePillText: {
+    fontFamily: FONTS.sans,
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#059669',
+  },
+  groupStatsDivider: {
+    height: 1,
+    backgroundColor: PALETTE[100],
+    marginVertical: 12,
+  },
+  groupStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  groupStatItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  groupStatText: {
+    fontFamily: FONTS.sans,
+    fontSize: 11,
+    color: PALETTE[600],
+  },
+  suggestedGroupCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: PALETTE.white,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: PALETTE[100],
+  },
+  commAvatarSmall: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: PALETTE[50],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  suggestedGroupName: {
+    fontFamily: FONTS.serif,
+    fontSize: 13,
+    fontWeight: '700',
+    color: PALETTE[950],
+  },
+  suggestedGroupGoal: {
+    fontFamily: FONTS.sans,
+    fontSize: 11,
+    color: PALETTE[600],
+    marginTop: 1,
+  },
+  suggestedGroupMeta: {
+    fontFamily: FONTS.sans,
+    fontSize: 10,
     color: PALETTE[400],
     marginTop: 2,
   },
-  joinedBadge: {
-    backgroundColor: PALETTE[100],
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+  joinBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: PALETTE[950],
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     borderRadius: 8,
   },
-  joinedText: {
+  joinBtnText: {
+    fontFamily: FONTS.sans,
+    fontSize: 11,
+    fontWeight: '700',
+    color: PALETTE.white,
+  },
+  createModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(16, 33, 35, 0.7)',
+    justifyContent: 'flex-end',
+  },
+  createModalCard: {
+    backgroundColor: PALETTE.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+  },
+  createModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  createModalTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  createModalTitle: {
+    fontFamily: FONTS.serif,
+    fontSize: 18,
+    fontWeight: '800',
+    color: PALETTE[950],
+  },
+  createModalClose: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: PALETTE[100],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  createModalSub: {
+    fontFamily: FONTS.sans,
+    fontSize: 12,
+    color: PALETTE[600],
+    marginBottom: 16,
+    lineHeight: 17,
+  },
+  inputLabel: {
     fontFamily: FONTS.sans,
     fontSize: 10,
+    fontWeight: '800',
+    color: PALETTE[500],
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  emojiPickerRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+  },
+  emojiOption: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: PALETTE[50],
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: PALETTE[200],
+  },
+  emojiOptionActive: {
+    backgroundColor: PALETTE[100],
+    borderColor: PALETTE[950],
+    borderWidth: 2,
+  },
+  groupInput: {
+    fontFamily: FONTS.sans,
+    fontSize: 14,
+    color: PALETTE[950],
+    backgroundColor: PALETTE[50],
+    borderWidth: 1,
+    borderColor: PALETTE[200],
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 16,
+  },
+  createGroupSubmitBtn: {
+    backgroundColor: PALETTE[950],
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 6,
+  },
+  createGroupSubmitText: {
+    fontFamily: FONTS.sans,
+    fontSize: 14,
     fontWeight: '700',
-    color: PALETTE[700],
+    color: PALETTE.white,
   },
 });

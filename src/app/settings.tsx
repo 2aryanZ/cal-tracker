@@ -28,35 +28,44 @@ import {
   Database,
   Droplet,
   RefreshCw,
+  Heart,
+  Activity,
+  Sparkles,
+  Utensils,
 } from 'lucide-react-native';
 
 import { useNutrition } from '@/context/NutritionContext';
 import { getApiKey, saveApiKey } from '@/services/storage';
 import { sendInstantStreakCelebration, requestNotificationPermissions } from '@/services/notificationService';
-import { MacroTargets, NotificationSettings } from '@/types/nutrition';
+import { MacroTargets, NotificationSettings, DietaryPreference } from '@/types/nutrition';
 import { AuthModal } from '@/components/AuthModal';
 import { PALETTE, FONTS } from '@/constants/theme';
+import { triggerLightImpact, triggerSelection, triggerSuccessFeedback } from '@/services/hapticsService';
 
-const DIET_PRESETS: { name: string; desc: string; goals: MacroTargets }[] = [
+const DIET_PRESETS: { name: string; desc: string; goals: MacroTargets; pref: DietaryPreference }[] = [
   {
     name: 'Muscle Gain',
     desc: 'High protein + moderate surplus',
     goals: { calories: 2600, protein: 180, carbs: 280, fats: 75, waterMl: 3000 },
+    pref: 'high_protein',
   },
   {
     name: 'Fat Loss (Cut)',
     desc: 'Caloric deficit + high protein',
     goals: { calories: 1850, protein: 160, carbs: 140, fats: 55, waterMl: 2500 },
+    pref: 'high_protein',
   },
   {
     name: 'Balanced Fitness',
     desc: 'Healthy maintenance ratio',
     goals: { calories: 2200, protein: 150, carbs: 220, fats: 65, waterMl: 2000 },
+    pref: 'balanced',
   },
   {
     name: 'Low Carb / Keto',
     desc: 'High fat + very low carbs',
     goals: { calories: 2000, protein: 140, carbs: 35, fats: 140, waterMl: 2500 },
+    pref: 'keto',
   },
 ];
 
@@ -70,6 +79,10 @@ export default function SettingsScreen() {
     stats,
     userProfile,
     userAccount,
+    dietaryPreference,
+    setDietaryPreference,
+    healthSync,
+    updateHealthSync,
     signIn,
     signOut,
     syncCloudNow,
@@ -78,6 +91,7 @@ export default function SettingsScreen() {
     triggerManualReward,
     showToast,
   } = useNutrition();
+
 
   // Targets state
   const [calories, setCalories] = useState(String(goals.calories));
@@ -220,20 +234,29 @@ export default function SettingsScreen() {
           </View>
 
           {userAccount.isLoggedIn ? (
-            <TouchableOpacity
-              style={styles.signOutBtn}
-              onPress={handleSignOutConfirm}
-              activeOpacity={0.85}>
-              <LogOut size={14} color="#DC2626" />
-              <Text style={styles.signOutBtnText}>Sign Out of Account</Text>
-            </TouchableOpacity>
+            <View style={{ gap: 8, marginTop: 12 }}>
+              <TouchableOpacity
+                style={styles.signOutBtn}
+                onPress={handleSignOutConfirm}
+                activeOpacity={0.85}>
+                <LogOut size={14} color="#DC2626" />
+                <Text style={styles.signOutBtnText}>Sign Out of Account</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.switchAccountBtn}
+                onPress={() => setIsAuthModalOpen(true)}
+                activeOpacity={0.85}>
+                <RefreshCw size={13} color={PALETTE[700]} />
+                <Text style={styles.switchAccountBtnText}>Switch / Link Another Account</Text>
+              </TouchableOpacity>
+            </View>
           ) : (
             <TouchableOpacity
               style={styles.signInBtn}
               onPress={() => setIsAuthModalOpen(true)}
               activeOpacity={0.85}>
               <LogIn size={15} color={PALETTE[50]} />
-              <Text style={styles.signInBtnText}>Sign In / Create Account</Text>
+              <Text style={styles.signInBtnText}>Sign In with Google / Email</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -368,6 +391,45 @@ export default function SettingsScreen() {
               />
               <Text style={styles.unitText}>ml ({(Number(waterTargetInput || 0) / 1000).toFixed(1)}L)</Text>
             </View>
+          </View>
+        </View>
+
+        {/* Dietary Preferences & Lifestyle Card */}
+        <Text style={styles.sectionTitle}>DIETARY PREFERENCES & LIFESTYLE</Text>
+        <View style={styles.card}>
+          <View style={styles.apiKeyHeader}>
+            <Utensils size={15} color={PALETTE[950]} />
+            <Text style={styles.apiKeyLabel}>Active Nutrition Protocol</Text>
+          </View>
+          <Text style={styles.apiKeySub}>
+            Guides AI Coach insights, voice meal suggestions, and meal planning blueprints.
+          </Text>
+
+          <View style={styles.prefGrid}>
+            {[
+              { key: 'high_protein' as const, label: 'High Protein', desc: 'Focus on muscle building & recovery' },
+              { key: 'balanced' as const, label: 'Balanced', desc: 'Equal macro split for sustainable energy' },
+              { key: 'keto' as const, label: 'Keto / Low-Carb', desc: 'High fat & minimal carbohydrates' },
+              { key: 'vegan' as const, label: 'Plant-Based / Vegan', desc: '100% plant-derived nutrients' },
+            ].map((item) => (
+              <TouchableOpacity
+                key={item.key}
+                style={[styles.prefItem, dietaryPreference === item.key && styles.prefItemActive]}
+                onPress={() => {
+                  triggerLightImpact();
+                  setDietaryPreference(item.key);
+                  showToast('Preference Updated', `Dietary style set to ${item.label}`, 'sparkles');
+                }}
+                activeOpacity={0.8}>
+                <View style={styles.prefLeft}>
+                  <Text style={[styles.prefTitle, dietaryPreference === item.key && styles.prefTitleActive]}>
+                    {item.label}
+                  </Text>
+                  <Text style={styles.prefSub}>{item.desc}</Text>
+                </View>
+                {dietaryPreference === item.key && <Check size={16} color={PALETTE[950]} />}
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
 
@@ -551,8 +613,8 @@ export default function SettingsScreen() {
       <AuthModal
         visible={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
-        onSignIn={(email, name, password) => {
-          signIn(email, name, password);
+        onSignIn={async (email, name, password) => {
+          await signIn(email, name, password);
         }}
       />
 
@@ -708,6 +770,23 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#DC2626',
   },
+  switchAccountBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: PALETTE[100],
+    borderRadius: 10,
+    paddingVertical: 9,
+    borderWidth: 1,
+    borderColor: PALETTE[200],
+  },
+  switchAccountBtnText: {
+    fontFamily: FONTS.sans,
+    fontSize: 12,
+    fontWeight: '700',
+    color: PALETTE[800],
+  },
   profileCard: {
     backgroundColor: PALETTE.white,
     borderRadius: 14,
@@ -799,6 +878,45 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: PALETTE[600],
+  },
+  prefGrid: {
+    gap: 8,
+    marginTop: 10,
+    marginBottom: 10,
+  },
+  prefItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: PALETTE[50],
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: PALETTE[100],
+  },
+  prefItemActive: {
+    backgroundColor: PALETTE[100],
+    borderColor: PALETTE[950],
+  },
+  prefLeft: {
+    flex: 1,
+    marginRight: 8,
+  },
+  prefTitle: {
+    fontFamily: FONTS.serif,
+    fontSize: 13,
+    fontWeight: '700',
+    color: PALETTE[950],
+  },
+  prefTitleActive: {
+    color: PALETTE[950],
+  },
+  prefSub: {
+    fontFamily: FONTS.sans,
+    fontSize: 10,
+    color: PALETTE[600],
+    marginTop: 2,
   },
   card: {
     backgroundColor: PALETTE.white,

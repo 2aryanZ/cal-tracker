@@ -104,4 +104,113 @@ export interface AiFoodDetectionResult {
   }[];
 }
 
+export type DietaryPreference =
+  | 'balanced'
+  | 'high_protein'
+  | 'keto'
+  | 'vegan'
+  | 'vegetarian'
+  | 'mediterranean'
+  | 'paleo'
+  | 'intermittent_fasting';
+
+export interface FavoriteMeal {
+  id: string;
+  name: string;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fats: number;
+  mealType: MealType;
+  portionSize?: string;
+  imageUri?: string;
+  createdAt: string;
+}
+
+export interface MilestoneBadge {
+  id: string;
+  title: string;
+  description: string;
+  category: 'streak' | 'nutrition' | 'scans' | 'weight' | 'water';
+  icon: string;
+  isUnlocked: boolean;
+  unlockedAt?: string;
+  progress: number; // 0.0 - 1.0
+  progressText: string;
+}
+
+export interface HealthSyncSettings {
+  appleHealthEnabled: boolean;
+  googleFitEnabled: boolean;
+  syncSteps: boolean;
+  syncActiveCalories: boolean;
+  syncWeight: boolean;
+  syncWater: boolean;
+  lastSyncedAt?: string;
+}
+
+export interface AiCoachInsight {
+  id: string;
+  greeting: string;
+  badge: string;
+  badgeType: 'success' | 'warning' | 'info' | 'streak';
+  title: string;
+  message: string;
+  recommendation?: {
+    title: string;
+    actionText: string;
+    mealType: MealType;
+    calories: number;
+    protein: number;
+    carbs: number;
+    fats: number;
+  };
+  macroPace: {
+    proteinStatus: 'on_track' | 'needs_more' | 'surplus';
+    proteinDeficitGrams: number;
+    calorieStatus: 'deficit' | 'balanced' | 'surplus';
+    calorieRemaining: number;
+  };
+}
+
+export interface AiMealPlanItem {
+  mealType: MealType;
+  name: string;
+  description: string;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fats: number;
+  portionSize: string;
+  ingredients: string[];
+}
+
+export interface AiMealPlan {
+  id: string;
+  title: string;
+  summary: string;
+  targetCalories: number;
+  targetProtein: number;
+  targetCarbs: number;
+  targetFats: number;
+  preference: DietaryPreference;
+  meals: AiMealPlanItem[];
+  createdAt: string;
+}
+
+export interface CommunityGroup {
+  id: string;
+  name: string;
+  description: string;
+  emoji: string;
+  category: 'strength' | 'deficit' | 'clean_eating' | 'hydration' | 'running';
+  membersCount: number;
+  activeTodayPct: number;
+  isJoined: boolean;
+  streakDays: number;
+  dailyGoal: string;
+  leaderboardRank?: number;
+}
+
 export type { UserProfile, NutritionPlan };
+

@@ -1,21 +1,37 @@
-import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { NotificationSettings } from '@/types/nutrition';
 
-// Configure notification behavior
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-    priority: Notifications.AndroidNotificationPriority.HIGH,
-  }),
-});
+/**
+ * Unified Notification Service for Cal Tracker
+ * Safely handles push & local notifications with graceful fallback for Expo Go on Android.
+ */
+
+// Dynamically and safely load expo-notifications to prevent module crash in Expo Go on Android
+let Notifications: any = null;
+try {
+  // Expo Go on Android removed remote notification functionality in SDK 53+, throwing on load
+  Notifications = require('expo-notifications');
+  if (Notifications?.setNotificationHandler) {
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: true,
+        shouldShowBanner: true,
+        shouldShowList: true,
+        priority: Notifications.AndroidNotificationPriority?.HIGH,
+      }),
+    });
+  }
+} catch (e) {
+  // Gracefully fallback when running inside Expo Go on Android
+  Notifications = null;
+}
 
 export async function requestNotificationPermissions(): Promise<boolean> {
-  if (Platform.OS === 'web') return false;
+  if (Platform.OS === 'web' || !Notifications?.getPermissionsAsync) {
+    return false;
+  }
 
   try {
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
@@ -28,13 +44,15 @@ export async function requestNotificationPermissions(): Promise<boolean> {
 
     return finalStatus === 'granted';
   } catch (error) {
-    console.warn('Error requesting notification permissions:', error);
+    console.warn('Notification permissions notice:', error);
     return false;
   }
 }
 
 export async function scheduleMealReminders(settings: NotificationSettings): Promise<void> {
-  if (Platform.OS === 'web') return;
+  if (Platform.OS === 'web' || !Notifications?.cancelAllScheduledNotificationsAsync) {
+    return;
+  }
 
   try {
     await Notifications.cancelAllScheduledNotificationsAsync();
@@ -44,7 +62,7 @@ export async function scheduleMealReminders(settings: NotificationSettings): Pro
     if (!granted) return;
 
     // 1. Breakfast Motivational Reminder
-    if (settings.breakfastReminder) {
+    if (settings.breakfastReminder && settings.breakfastTime) {
       const [hour, minute] = settings.breakfastTime.split(':').map(Number);
       await Notifications.scheduleNotificationAsync({
         content: {
@@ -54,7 +72,7 @@ export async function scheduleMealReminders(settings: NotificationSettings): Pro
           sound: true,
         },
         trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.DAILY,
+          type: Notifications.SchedulableTriggerInputTypes?.DAILY || 'daily',
           hour: hour || 8,
           minute: minute || 30,
         },
@@ -62,7 +80,7 @@ export async function scheduleMealReminders(settings: NotificationSettings): Pro
     }
 
     // 2. Midday Motivational Boost
-    if (settings.lunchReminder) {
+    if (settings.lunchReminder && settings.lunchTime) {
       const [hour, minute] = settings.lunchTime.split(':').map(Number);
       await Notifications.scheduleNotificationAsync({
         content: {
@@ -72,7 +90,7 @@ export async function scheduleMealReminders(settings: NotificationSettings): Pro
           sound: true,
         },
         trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.DAILY,
+          type: Notifications.SchedulableTriggerInputTypes?.DAILY || 'daily',
           hour: hour || 13,
           minute: minute || 0,
         },
@@ -80,7 +98,7 @@ export async function scheduleMealReminders(settings: NotificationSettings): Pro
     }
 
     // 3. Evening Pending Meal Reminder
-    if (settings.dinnerReminder) {
+    if (settings.dinnerReminder && settings.dinnerTime) {
       const [hour, minute] = settings.dinnerTime.split(':').map(Number);
       await Notifications.scheduleNotificationAsync({
         content: {
@@ -90,7 +108,7 @@ export async function scheduleMealReminders(settings: NotificationSettings): Pro
           sound: true,
         },
         trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.DAILY,
+          type: Notifications.SchedulableTriggerInputTypes?.DAILY || 'daily',
           hour: hour || 19,
           minute: minute || 30,
         },
@@ -98,7 +116,7 @@ export async function scheduleMealReminders(settings: NotificationSettings): Pro
     }
 
     // 4. Night Streak & Goal Completion Push
-    if (settings.streakReminder) {
+    if (settings.streakReminder && settings.streakTime) {
       const [hour, minute] = settings.streakTime.split(':').map(Number);
       await Notifications.scheduleNotificationAsync({
         content: {
@@ -108,7 +126,7 @@ export async function scheduleMealReminders(settings: NotificationSettings): Pro
           sound: true,
         },
         trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.DAILY,
+          type: Notifications.SchedulableTriggerInputTypes?.DAILY || 'daily',
           hour: hour || 21,
           minute: minute || 30,
         },
@@ -120,7 +138,9 @@ export async function scheduleMealReminders(settings: NotificationSettings): Pro
 }
 
 export async function sendInstantStreakCelebration(streakCount: number): Promise<void> {
-  if (Platform.OS === 'web') return;
+  if (Platform.OS === 'web' || !Notifications?.scheduleNotificationAsync) {
+    return;
+  }
 
   try {
     await Notifications.scheduleNotificationAsync({
@@ -136,8 +156,13 @@ export async function sendInstantStreakCelebration(streakCount: number): Promise
   }
 }
 
-export async function sendMotivationalGoalReminder(type: 'unlogged' | 'almost_done' | 'hydration' | 'protein', detail?: string): Promise<void> {
-  if (Platform.OS === 'web') return;
+export async function sendMotivationalGoalReminder(
+  type: 'unlogged' | 'almost_done' | 'hydration' | 'protein',
+  detail?: string
+): Promise<void> {
+  if (Platform.OS === 'web' || !Notifications?.scheduleNotificationAsync) {
+    return;
+  }
 
   try {
     let title = '💪 You can do this!';

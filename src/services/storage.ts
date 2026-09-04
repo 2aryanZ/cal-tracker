@@ -1,5 +1,15 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { FoodEntry, MacroTargets, UserStats, NotificationSettings, UserProfile } from '@/types/nutrition';
+import {
+  FoodEntry,
+  MacroTargets,
+  UserStats,
+  NotificationSettings,
+  UserProfile,
+  DietaryPreference,
+  FavoriteMeal,
+  HealthSyncSettings,
+  CommunityGroup,
+} from '@/types/nutrition';
 
 const STORAGE_KEYS = {
   ENTRIES: '@cal_ai_food_entries_v1',
@@ -13,7 +23,12 @@ const STORAGE_KEYS = {
   WEIGHT_LOGS: '@cal_ai_weight_logs_v1',
   ACCOUNT: '@cal_ai_user_account_v1',
   WATER_LOGS: '@cal_ai_water_logs_v1',
+  FAVORITES: '@cal_ai_favorite_meals_v1',
+  DIETARY_PREFERENCE: '@cal_ai_dietary_preference_v1',
+  HEALTH_SYNC: '@cal_ai_health_sync_v1',
+  COMMUNITY_GROUPS: '@cal_ai_community_groups_v1',
 };
+
 
 export const DEFAULT_PROFILE: UserProfile = {
   gender: 'male',
@@ -481,18 +496,24 @@ export async function deleteWeightLog(id: string): Promise<import('@/types/nutri
 }
 
 export const DEFAULT_ACCOUNT: import('@/types/nutrition').UserAccount = {
-  id: 'usr_default',
-  name: 'Aryan',
-  email: 'aryan@example.com',
-  memberSince: 'Aug 2025',
-  isLoggedIn: true,
-  tier: 'Pro',
+  id: 'usr_guest',
+  name: 'Guest User',
+  email: '',
+  memberSince: 'Today',
+  isLoggedIn: false,
+  tier: 'Free',
 };
 
 export async function getUserAccount(): Promise<import('@/types/nutrition').UserAccount> {
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEYS.ACCOUNT);
-    return raw ? JSON.parse(raw) : DEFAULT_ACCOUNT;
+    if (!raw) return DEFAULT_ACCOUNT;
+    const parsed = JSON.parse(raw);
+    // Reset legacy mock email if present so user sees proper guest/sign-in status
+    if (parsed.email === 'aryan@example.com') {
+      return DEFAULT_ACCOUNT;
+    }
+    return parsed;
   } catch {
     return DEFAULT_ACCOUNT;
   }
@@ -591,4 +612,236 @@ export async function setAllWeightLogs(logs: import('@/types/nutrition').WeightE
   cachedWeightLogs = logs;
   await AsyncStorage.setItem(STORAGE_KEYS.WEIGHT_LOGS, JSON.stringify(logs));
 }
+
+export const DEFAULT_DIETARY_PREFERENCE: DietaryPreference = 'high_protein';
+
+export const DEFAULT_HEALTH_SYNC: HealthSyncSettings = {
+  appleHealthEnabled: false,
+  googleFitEnabled: false,
+  syncSteps: true,
+  syncActiveCalories: true,
+  syncWeight: true,
+  syncWater: true,
+  lastSyncedAt: undefined,
+};
+
+export const SEED_FAVORITES: FavoriteMeal[] = [
+  {
+    id: 'fav_oatmeal_whey',
+    name: 'Oatmeal with Berries & Whey',
+    calories: 420,
+    protein: 32,
+    carbs: 54,
+    fats: 8,
+    mealType: 'breakfast',
+    portionSize: '1 bowl',
+    imageUri: 'https://images.unsplash.com/photo-1525351484163-7529414344d8?w=350&q=75&auto=format&fit=crop',
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'fav_chicken_bowl',
+    name: 'Grilled Chicken Rice Bowl',
+    calories: 680,
+    protein: 52,
+    carbs: 65,
+    fats: 22,
+    mealType: 'lunch',
+    portionSize: '1 large bowl',
+    imageUri: 'https://images.unsplash.com/photo-1543339308-43e59d6b73a6?w=350&q=75&auto=format&fit=crop',
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'fav_salmon_asparagus',
+    name: 'Salmon Fillet with Sweet Potato',
+    calories: 720,
+    protein: 48,
+    carbs: 58,
+    fats: 28,
+    mealType: 'dinner',
+    portionSize: '1 plate',
+    imageUri: 'https://images.unsplash.com/photo-1467003909585-2f8a72700288?w=350&q=75&auto=format&fit=crop',
+    createdAt: new Date().toISOString(),
+  },
+];
+
+let cachedFavorites: FavoriteMeal[] | null = null;
+
+export async function getFavoriteMeals(): Promise<FavoriteMeal[]> {
+  if (cachedFavorites) return cachedFavorites;
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEYS.FAVORITES);
+    if (!raw) {
+      cachedFavorites = SEED_FAVORITES;
+      await AsyncStorage.setItem(STORAGE_KEYS.FAVORITES, JSON.stringify(SEED_FAVORITES));
+      return SEED_FAVORITES;
+    }
+    cachedFavorites = JSON.parse(raw);
+    return cachedFavorites || [];
+  } catch (err) {
+    console.error('Error fetching favorites:', err);
+    return SEED_FAVORITES;
+  }
+}
+
+export async function saveFavoriteMeal(meal: Omit<FavoriteMeal, 'id' | 'createdAt'> & { id?: string }): Promise<FavoriteMeal[]> {
+  try {
+    const list = await getFavoriteMeals();
+    const newFav: FavoriteMeal = {
+      id: meal.id || `fav_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      name: meal.name,
+      calories: meal.calories,
+      protein: meal.protein,
+      carbs: meal.carbs,
+      fats: meal.fats,
+      mealType: meal.mealType,
+      portionSize: meal.portionSize,
+      imageUri: meal.imageUri,
+      createdAt: new Date().toISOString(),
+    };
+    // Don't add duplicate names
+    const filtered = list.filter((f) => f.name.toLowerCase() !== meal.name.toLowerCase());
+    const updated = [newFav, ...filtered];
+    cachedFavorites = updated;
+    await AsyncStorage.setItem(STORAGE_KEYS.FAVORITES, JSON.stringify(updated));
+    return updated;
+  } catch (err) {
+    console.error('Error saving favorite meal:', err);
+    throw err;
+  }
+}
+
+export async function removeFavoriteMeal(id: string): Promise<FavoriteMeal[]> {
+  try {
+    const list = await getFavoriteMeals();
+    const updated = list.filter((f) => f.id !== id && f.name !== id);
+    cachedFavorites = updated;
+    await AsyncStorage.setItem(STORAGE_KEYS.FAVORITES, JSON.stringify(updated));
+    return updated;
+  } catch (err) {
+    console.error('Error removing favorite meal:', err);
+    throw err;
+  }
+}
+
+export async function getDietaryPreference(): Promise<DietaryPreference> {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEYS.DIETARY_PREFERENCE);
+    return (raw as DietaryPreference) || DEFAULT_DIETARY_PREFERENCE;
+  } catch {
+    return DEFAULT_DIETARY_PREFERENCE;
+  }
+}
+
+export async function saveDietaryPreference(pref: DietaryPreference): Promise<void> {
+  try {
+    await AsyncStorage.setItem(STORAGE_KEYS.DIETARY_PREFERENCE, pref);
+  } catch (err) {
+    console.error('Error saving dietary preference:', err);
+  }
+}
+
+export async function getHealthSyncSettings(): Promise<HealthSyncSettings> {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEYS.HEALTH_SYNC);
+    return raw ? JSON.parse(raw) : DEFAULT_HEALTH_SYNC;
+  } catch {
+    return DEFAULT_HEALTH_SYNC;
+  }
+}
+
+export async function saveHealthSyncSettings(settings: HealthSyncSettings): Promise<void> {
+  try {
+    await AsyncStorage.setItem(STORAGE_KEYS.HEALTH_SYNC, JSON.stringify(settings));
+  } catch (err) {
+    console.error('Error saving health sync settings:', err);
+  }
+}
+
+export const DEFAULT_COMMUNITY_GROUPS: CommunityGroup[] = [
+  {
+    id: 'grp_protein_beasts',
+    name: 'High Protein Bulk & Cut',
+    description: 'Crush 160g+ daily protein targets with fellow lifters & athletes.',
+    emoji: '🥩',
+    category: 'strength',
+    membersCount: 3840,
+    activeTodayPct: 92,
+    isJoined: true,
+    streakDays: 14,
+    dailyGoal: '160g+ Protein',
+    leaderboardRank: 4,
+  },
+  {
+    id: 'grp_summer_cut',
+    name: '100-Day Calorie Cutters',
+    description: 'Disciplined 500 kcal daily deficit to drop body fat cleanly.',
+    emoji: '🔥',
+    category: 'deficit',
+    membersCount: 2150,
+    activeTodayPct: 88,
+    isJoined: true,
+    streakDays: 8,
+    dailyGoal: '-500 kcal Deficit',
+    leaderboardRank: 12,
+  },
+  {
+    id: 'grp_clean_eating',
+    name: 'Clean Whole Foods Squad',
+    description: 'Zero ultra-processed foods. Focus on natural, anti-inflammatory meals.',
+    emoji: '🥑',
+    category: 'clean_eating',
+    membersCount: 1420,
+    activeTodayPct: 85,
+    isJoined: false,
+    streakDays: 21,
+    dailyGoal: '100% Whole Foods',
+  },
+  {
+    id: 'grp_hydration_hero',
+    name: '3L Hydration & Fasting',
+    description: 'Hit 3,000ml water daily and power through 16:8 intermittent fasting.',
+    emoji: '💧',
+    category: 'hydration',
+    membersCount: 960,
+    activeTodayPct: 79,
+    isJoined: false,
+    streakDays: 5,
+    dailyGoal: '3.0L Water',
+  },
+  {
+    id: 'grp_10k_runners',
+    name: '10k Daily Steps & Cardio',
+    description: 'Consistent daily movement, steps, and aerobic conditioning.',
+    emoji: '🏃',
+    category: 'running',
+    membersCount: 1890,
+    activeTodayPct: 91,
+    isJoined: false,
+    streakDays: 11,
+    dailyGoal: '10,000 Steps',
+  },
+];
+
+export async function getCommunityGroups(): Promise<CommunityGroup[]> {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEYS.COMMUNITY_GROUPS);
+    if (!raw) {
+      await saveCommunityGroups(DEFAULT_COMMUNITY_GROUPS);
+      return DEFAULT_COMMUNITY_GROUPS;
+    }
+    return JSON.parse(raw);
+  } catch {
+    return DEFAULT_COMMUNITY_GROUPS;
+  }
+}
+
+export async function saveCommunityGroups(groups: CommunityGroup[]): Promise<void> {
+  try {
+    await AsyncStorage.setItem(STORAGE_KEYS.COMMUNITY_GROUPS, JSON.stringify(groups));
+  } catch (err) {
+    console.error('Error saving community groups:', err);
+  }
+}
+
+
 

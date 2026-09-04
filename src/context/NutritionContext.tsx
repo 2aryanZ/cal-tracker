@@ -11,6 +11,11 @@ import {
   ToastNotification,
   UserAccount,
   WeightEntry,
+  MealType,
+  DietaryPreference,
+  FavoriteMeal,
+  HealthSyncSettings,
+  MilestoneBadge,
 } from '@/types/nutrition';
 import {
   initializeStorage,
@@ -39,11 +44,20 @@ import {
   getWeightLogs,
   addWeightLog,
   deleteWeightLog,
+  getFavoriteMeals,
+  saveFavoriteMeal,
+  removeFavoriteMeal,
+  getDietaryPreference,
+  saveDietaryPreference,
+  getHealthSyncSettings,
+  saveHealthSyncSettings,
   DEFAULT_GOALS,
   DEFAULT_STATS,
   DEFAULT_NOTIFICATIONS,
   DEFAULT_PROFILE,
   DEFAULT_ACCOUNT,
+  DEFAULT_DIETARY_PREFERENCE,
+  DEFAULT_HEALTH_SYNC,
 } from '@/services/storage';
 import { scheduleMealReminders, sendInstantStreakCelebration } from '@/services/notificationService';
 import {
@@ -85,6 +99,11 @@ interface NutritionContextType {
   waterMl: number;
   waterLogs: Record<string, number>;
   weightLogs: WeightEntry[];
+  favoriteMeals: FavoriteMeal[];
+  recentMeals: FoodEntry[];
+  dietaryPreference: DietaryPreference;
+  healthSync: HealthSyncSettings;
+  milestoneBadges: MilestoneBadge[];
   consumed: {
     calories: number;
     protein: number;
@@ -110,6 +129,11 @@ interface NutritionContextType {
   setWater: (totalMl: number, date?: string) => Promise<void>;
   addWeight: (data: { weightKg: number; weightLbs: number; date?: string; note?: string }) => Promise<void>;
   deleteWeight: (id: string) => Promise<void>;
+  toggleFavoriteMeal: (meal: { name: string; calories: number; protein: number; carbs: number; fats: number; mealType: any; portionSize?: string; imageUri?: string }) => Promise<boolean>;
+  isFavoriteMeal: (name: string) => boolean;
+  setDietaryPreference: (pref: DietaryPreference) => Promise<void>;
+  updateHealthSync: (settings: Partial<HealthSyncSettings>) => Promise<void>;
+  repeatYesterdayMeal: (mealType: import('@/types/nutrition').MealType) => Promise<number>;
   updateGoals: (goals: MacroTargets) => Promise<void>;
   saveProfile: (profile: UserProfile, newGoals: MacroTargets) => Promise<void>;
   updateNotifications: (settings: NotificationSettings) => Promise<void>;
@@ -120,13 +144,13 @@ interface NutritionContextType {
   updateAccount: (account: Partial<UserAccount>) => Promise<void>;
   syncCloudNow: () => Promise<void>;
 
-
   dismissReward: () => void;
   triggerManualReward: () => void;
   showToast: (title: string, message: string, icon?: string) => void;
   dismissToast: () => void;
   refreshData: () => Promise<void>;
 }
+
 
 const NutritionContext = createContext<NutritionContextType | undefined>(undefined);
 
@@ -140,6 +164,9 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(DEFAULT_NOTIFICATIONS);
   const [waterLogs, setWaterLogsState] = useState<Record<string, number>>({});
   const [weightLogs, setWeightLogsState] = useState<WeightEntry[]>([]);
+  const [favoriteMeals, setFavoriteMealsState] = useState<FavoriteMeal[]>([]);
+  const [dietaryPreference, setDietaryPreferenceState] = useState<DietaryPreference>(DEFAULT_DIETARY_PREFERENCE);
+  const [healthSync, setHealthSyncState] = useState<HealthSyncSettings>(DEFAULT_HEALTH_SYNC);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [onboardingVisible, setOnboardingVisible] = useState<boolean>(false);
@@ -166,6 +193,9 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
         storedAccount,
         storedWaterLogs,
         storedWeights,
+        storedFavorites,
+        storedPref,
+        storedHealth,
         onboardingDone,
       ] = await Promise.all([
         getFoodEntries(),
@@ -176,6 +206,9 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
         getUserAccount(),
         getWaterLogs(),
         getWeightLogs(),
+        getFavoriteMeals(),
+        getDietaryPreference(),
+        getHealthSyncSettings(),
         hasCompletedOnboarding(),
       ]);
 
@@ -187,10 +220,14 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
       setUserAccount(storedAccount);
       setWaterLogsState(storedWaterLogs);
       setWeightLogsState(storedWeights);
+      setFavoriteMealsState(storedFavorites);
+      setDietaryPreferenceState(storedPref);
+      setHealthSyncState(storedHealth);
 
       if (!onboardingDone) {
         setOnboardingVisible(true);
       }
+
 
 
       // Schedule notifications in background
@@ -738,6 +775,182 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
     setToastNotification(null);
   };
 
+  // Distinct recent meals logged across all time
+  const recentMeals = useMemo(() => {
+    const seen = new Set<string>();
+    const list: FoodEntry[] = [];
+    for (const entry of entries) {
+      const clean = entry.name.trim().toLowerCase();
+      if (!seen.has(clean)) {
+        seen.add(clean);
+        list.push(entry);
+      }
+      if (list.length >= 8) break;
+    }
+    return list;
+  }, [entries]);
+
+  // Milestone Badges Computed State
+  const milestoneBadges = useMemo<MilestoneBadge[]>(() => {
+    const streak = stats.currentStreak || 0;
+    const totalMeals = stats.totalMealsLogged || 0;
+    const currentWeight = weightLogs[0]?.weightKg ?? userProfile.weightKg ?? 75;
+    const targetWeight = userProfile.targetWeightKg || 74;
+    const weightProgressPct = Math.min(1, Math.max(0, Math.abs(78 - currentWeight) / (Math.abs(78 - targetWeight) || 1)));
+
+    return [
+      {
+        id: 'badge_streak_7',
+        title: '7-Day Streak Beast',
+        description: 'Log daily nutrition for 7 consecutive days',
+        category: 'streak',
+        icon: 'flame',
+        isUnlocked: streak >= 7,
+        unlockedAt: streak >= 7 ? 'Earned' : undefined,
+        progress: Math.min(1, streak / 7),
+        progressText: `${Math.min(streak, 7)}/7 Days`,
+      },
+      {
+        id: 'badge_streak_30',
+        title: '30-Day Master',
+        description: 'Log daily nutrition for 30 consecutive days',
+        category: 'streak',
+        icon: 'trophy',
+        isUnlocked: streak >= 30,
+        unlockedAt: streak >= 30 ? 'Earned' : undefined,
+        progress: Math.min(1, streak / 30),
+        progressText: `${Math.min(streak, 30)}/30 Days`,
+      },
+      {
+        id: 'badge_protein_master',
+        title: 'Protein Master',
+        description: 'Hit 100%+ of your daily protein target budget',
+        category: 'nutrition',
+        icon: 'target',
+        isUnlocked: consumed.protein >= goals.protein && goals.protein > 0,
+        unlockedAt: consumed.protein >= goals.protein ? 'Earned Today' : undefined,
+        progress: goals.protein > 0 ? Math.min(1, consumed.protein / goals.protein) : 0,
+        progressText: `${consumed.protein}/${goals.protein}g`,
+      },
+      {
+        id: 'badge_hydration_hero',
+        title: 'Hydration Hero',
+        description: 'Drink and record at least 2.0L of water in a day',
+        category: 'water',
+        icon: 'droplet',
+        isUnlocked: waterMl >= (goals.waterMl || 2000),
+        unlockedAt: waterMl >= (goals.waterMl || 2000) ? 'Earned Today' : undefined,
+        progress: Math.min(1, waterMl / (goals.waterMl || 2000)),
+        progressText: `${(waterMl / 1000).toFixed(1)}L / ${((goals.waterMl || 2000) / 1000).toFixed(1)}L`,
+      },
+      {
+        id: 'badge_ai_scanner',
+        title: 'AI Vision Prodigy',
+        description: 'Log 10 meals using the AI camera or barcode scanner',
+        category: 'scans',
+        icon: 'camera',
+        isUnlocked: totalMeals >= 10,
+        unlockedAt: totalMeals >= 10 ? 'Earned' : undefined,
+        progress: Math.min(1, totalMeals / 10),
+        progressText: `${Math.min(totalMeals, 10)}/10 Meals`,
+      },
+      {
+        id: 'badge_weight_goal',
+        title: 'Target Weight Crusher',
+        description: 'Reach or surpass your target milestone body weight',
+        category: 'weight',
+        icon: 'scale',
+        isUnlocked: Math.abs(currentWeight - targetWeight) <= 0.5,
+        unlockedAt: Math.abs(currentWeight - targetWeight) <= 0.5 ? 'Earned' : undefined,
+        progress: weightProgressPct,
+        progressText: `${Math.round(weightProgressPct * 100)}% Progress`,
+      },
+    ];
+  }, [stats, weightLogs, userProfile, consumed.protein, goals, waterMl]);
+
+  // Favorites management
+  const toggleFavoriteMeal = async (meal: {
+    name: string;
+    calories: number;
+    protein: number;
+    carbs: number;
+    fats: number;
+    mealType: any;
+    portionSize?: string;
+    imageUri?: string;
+  }): Promise<boolean> => {
+    const isFav = favoriteMeals.some((f) => f.name.toLowerCase() === meal.name.toLowerCase());
+    if (isFav) {
+      const match = favoriteMeals.find((f) => f.name.toLowerCase() === meal.name.toLowerCase());
+      if (match) {
+        const updated = await removeFavoriteMeal(match.id);
+        setFavoriteMealsState(updated);
+        showToast('Removed from Favorites', `${meal.name} unbookmarked.`, 'star');
+        return false;
+      }
+      return false;
+    } else {
+      const updated = await saveFavoriteMeal(meal);
+      setFavoriteMealsState(updated);
+      triggerSuccessFeedback();
+      showToast('Added to Favorites ⭐', `${meal.name} saved for 1-tap quick logging.`, 'star');
+      return true;
+    }
+  };
+
+  const isFavoriteMeal = (name: string): boolean => {
+    return favoriteMeals.some((f) => f.name.toLowerCase() === name.trim().toLowerCase());
+  };
+
+  const setDietaryPreference = async (pref: DietaryPreference) => {
+    setDietaryPreferenceState(pref);
+    await saveDietaryPreference(pref);
+    showToast('Diet Preference Saved', `Set to ${pref.replace('_', ' ').toUpperCase()}`, 'sparkles');
+  };
+
+  const updateHealthSync = async (settings: Partial<HealthSyncSettings>) => {
+    const updated: HealthSyncSettings = { ...healthSync, ...settings, lastSyncedAt: new Date().toISOString() };
+    setHealthSyncState(updated);
+    await saveHealthSyncSettings(updated);
+    showToast('Health Sync Updated 🩺', 'Biometric sync settings updated.', 'sparkles');
+  };
+
+  // Repeat yesterday's specific meal slot into today
+  const repeatYesterdayMeal = async (mealType: MealType): Promise<number> => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+    const yesterdayMeals = entries.filter((e) => e.date === yesterdayStr && e.mealType === mealType);
+    if (yesterdayMeals.length === 0) {
+      showToast('No Meals Found', `No ${mealType} entries found for yesterday.`, 'sparkles');
+      return 0;
+    }
+
+    triggerSuccessFeedback();
+    for (const item of yesterdayMeals) {
+      await logMeal({
+        name: item.name,
+        calories: item.calories,
+        protein: item.protein,
+        carbs: item.carbs,
+        fats: item.fats,
+        mealType: item.mealType,
+        portionSize: item.portionSize,
+        imageUri: item.imageUri,
+        date: selectedDate || getTodayDateString(),
+        isAiGenerated: false,
+      });
+    }
+
+    showToast(
+      `Repeated Yesterday's ${mealType.toUpperCase()} ⚡`,
+      `Logged ${yesterdayMeals.length} meal(s) into today's ${mealType}.`,
+      'sparkles'
+    );
+    return yesterdayMeals.length;
+  };
+
   const dismissReward = () => {
     setRewardState((prev) => ({ ...prev, visible: false }));
   };
@@ -754,52 +967,91 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  return (
-    <NutritionContext.Provider
-      value={{
-        entries,
-        selectedDate,
-        setSelectedDate,
-        goals,
-        stats,
-        userProfile,
-        userAccount,
-        notificationSettings,
-        dailySummary,
-        waterMl,
-        waterLogs,
-        weightLogs,
-        consumed,
-        remaining,
-        isLoading,
-        isSyncing,
-        rewardState,
-        toastNotification,
-        onboardingVisible,
-        setOnboardingVisible,
-        logMeal,
-        editMeal,
-        removeMeal,
-        logWater,
-        setWater,
-        addWeight,
-        deleteWeight,
-        updateGoals,
-        saveProfile,
-        updateNotifications,
-        signIn,
-        signInWithGoogle,
-        signInWithApple,
-        signOut,
-        updateAccount,
-        syncCloudNow,
 
-        dismissReward,
-        triggerManualReward,
-        showToast,
-        dismissToast,
-        refreshData: loadData,
-      }}>
+  const contextValue = useMemo<NutritionContextType>(
+    () => ({
+      entries,
+      selectedDate,
+      setSelectedDate,
+      goals,
+      stats,
+      userProfile,
+      userAccount,
+      notificationSettings,
+      dailySummary,
+      waterMl,
+      waterLogs,
+      weightLogs,
+      favoriteMeals,
+      recentMeals,
+      dietaryPreference,
+      healthSync,
+      milestoneBadges,
+      consumed,
+      remaining,
+      isLoading,
+      isSyncing,
+      rewardState,
+      toastNotification,
+      onboardingVisible,
+      setOnboardingVisible,
+      logMeal,
+      editMeal,
+      removeMeal,
+      logWater,
+      setWater,
+      addWeight,
+      deleteWeight,
+      toggleFavoriteMeal,
+      isFavoriteMeal,
+      setDietaryPreference,
+      updateHealthSync,
+      repeatYesterdayMeal,
+      updateGoals,
+      saveProfile,
+      updateNotifications,
+      signIn,
+      signInWithGoogle,
+      signInWithApple,
+      signOut,
+      updateAccount,
+      syncCloudNow,
+
+      dismissReward,
+      triggerManualReward,
+      showToast,
+      dismissToast,
+      refreshData: loadData,
+    }),
+    [
+      entries,
+      selectedDate,
+      goals,
+      stats,
+      userProfile,
+      userAccount,
+      notificationSettings,
+      dailySummary,
+      waterMl,
+      waterLogs,
+      weightLogs,
+      favoriteMeals,
+      recentMeals,
+      dietaryPreference,
+      healthSync,
+      milestoneBadges,
+      consumed,
+      remaining,
+      isLoading,
+      isSyncing,
+      rewardState,
+      toastNotification,
+      onboardingVisible,
+    ]
+  );
+
+  return (
+    <NutritionContext.Provider value={contextValue}>
       {children}
     </NutritionContext.Provider>
   );

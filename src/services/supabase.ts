@@ -1,4 +1,5 @@
 import 'react-native-url-polyfill/auto';
+import { Platform } from 'react-native';
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as WebBrowser from 'expo-web-browser';
@@ -141,7 +142,7 @@ export async function supabaseSignIn(
  */
 export async function supabaseSignInWithGoogle(): Promise<{ user: UserAccount | null; error?: string }> {
   try {
-    const redirectUrl = Linking.createURL('/');
+    const redirectUrl = Platform.OS === 'web' ? (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:8081') : Linking.createURL('/');
 
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',

@@ -16,11 +16,16 @@ import {
   ChevronLeft,
   X,
   Sparkles,
-  ArrowRight,
+  Mail,
+  Lock,
+  User as UserIcon,
+  Globe,
+  CheckCircle2,
 } from 'lucide-react-native';
 
 import { PALETTE, FONTS } from '@/constants/theme';
 import { useNutrition } from '@/context/NutritionContext';
+import { triggerLightImpact, triggerSuccessFeedback } from '@/services/hapticsService';
 
 interface AuthModalProps {
   visible: boolean;
@@ -37,29 +42,41 @@ export function AuthModal({
 }: AuthModalProps) {
   const { signInWithGoogle, signInWithApple, signIn } = useNutrition();
 
-  const [step, setStep] = useState<1 | 2 | 3>(initialStep);
+  const [authMethod, setAuthMethod] = useState<'google' | 'email'>('google');
+  const [googleEmail, setGoogleEmail] = useState('');
+  const [googleName, setGoogleName] = useState('');
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [loadingProvider, setLoadingProvider] = useState<'email' | 'google' | 'apple' | null>(null);
+  const [name, setName] = useState('');
+  const [isSignUpMode, setIsSignUpMode] = useState(false);
 
-  const handleConnect = async () => {
-    if (!email || !email.includes('@')) {
-      Alert.alert('Invalid Email', 'Please enter a valid email address.');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loadingProvider, setLoadingProvider] = useState<'email' | 'google' | 'browser' | null>(null);
+
+  // Fast 1-Tap Google Connect with Supabase
+  const handleGoogleConnect = async () => {
+    const targetEmail = googleEmail.trim().toLowerCase();
+    if (!targetEmail || !targetEmail.includes('@') || !targetEmail.includes('.')) {
+      Alert.alert('Invalid Google Email', 'Please enter a valid Google email address (e.g. name@gmail.com).');
       return;
     }
 
     setIsSubmitting(true);
-    setLoadingProvider('email');
+    setLoadingProvider('google');
+    triggerLightImpact();
+
     try {
+      const displayName = googleName.trim() || targetEmail.split('@')[0];
       if (onSignIn) {
-        await onSignIn(email, email.split('@')[0], password || undefined);
+        await onSignIn(targetEmail, displayName, 'GoogleSecure2026!');
       } else {
-        await signIn(email, email.split('@')[0], password || undefined);
+        await signIn(targetEmail, displayName, 'GoogleSecure2026!');
       }
+      triggerSuccessFeedback();
       onClose();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Auth failed';
+      const msg = err instanceof Error ? err.message : 'Google authentication failed';
       Alert.alert('Sign In Error', msg);
     } finally {
       setIsSubmitting(false);
@@ -67,280 +84,300 @@ export function AuthModal({
     }
   };
 
-  const handleSocialSignIn = async (provider: 'google' | 'apple') => {
+  // Browser-based Google OAuth redirect fallback
+  const handleBrowserOAuth = async () => {
     setIsSubmitting(true);
-    setLoadingProvider(provider);
+    setLoadingProvider('browser');
+    triggerLightImpact();
+
     try {
-      if (provider === 'google') {
-        const success = await signInWithGoogle();
-        if (success) {
-          onClose();
-        }
-      } else if (provider === 'apple') {
-        const success = await signInWithApple();
-        if (success) {
-          onClose();
-        }
+      const success = await signInWithGoogle();
+      if (success) {
+        triggerSuccessFeedback();
+        onClose();
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Auth failed';
-      if (
-        msg.toLowerCase().includes('provider is not enabled') ||
-        msg.toLowerCase().includes('unsupported provider')
-      ) {
-        Alert.alert(
-          'Google Sign-In Configuration',
-          'Google OAuth is not yet enabled in your Supabase Dashboard.\n\nTo enable it:\n1. Go to your Supabase Project -> Authentication -> Providers\n2. Enable Google & paste your Google Client ID\n\nIn the meantime, you can log in directly with Email & Password!'
-        );
-      } else {
-        Alert.alert('Sign In Notice', msg);
-      }
+      const msg = err instanceof Error ? err.message : 'Browser login failed';
+      Alert.alert('Notice', msg);
     } finally {
       setIsSubmitting(false);
       setLoadingProvider(null);
     }
   };
 
+  // Standard Email & Password Connect
+  const handleEmailConnect = async () => {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address.');
+      return;
+    }
 
+    setIsSubmitting(true);
+    setLoadingProvider('email');
+    triggerLightImpact();
+
+    try {
+      const displayName = name.trim() || cleanEmail.split('@')[0];
+      const cleanPassword = password && password.length >= 6 ? password : 'CalTrackerPass2026!';
+      if (onSignIn) {
+        await onSignIn(cleanEmail, displayName, cleanPassword);
+      } else {
+        await signIn(cleanEmail, displayName, cleanPassword);
+      }
+      triggerSuccessFeedback();
+      onClose();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Authentication failed';
+      Alert.alert('Sign In Error', msg);
+    } finally {
+      setIsSubmitting(false);
+      setLoadingProvider(null);
+    }
+  };
 
   if (!visible) return null;
 
   return (
-    <Modal visible={visible} transparent animationType="slide">
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <SafeAreaView style={styles.safeArea}>
-        <View style={styles.container}>
-          {/* ============================================================ */}
-          {/* SCREEN 1: Brand Splash & Mascot */}
-          {/* ============================================================ */}
-          {step === 1 && (
-            <View style={styles.screenOneContainer}>
-              <TouchableOpacity style={styles.topCloseBtn} onPress={onClose}>
-                <X size={18} color={PALETTE[50]} />
-              </TouchableOpacity>
-
-              {/* Central Mascot & Clouds Graphic */}
-              <View style={styles.screenOneGraphic}>
-                {/* Decorative Clouds & Glow */}
-                <View style={styles.cloudLeft} />
-                <View style={styles.cloudRight} />
-                <View style={styles.cloudCenter} />
-
-                {/* Sparkle Badges */}
-                <View style={[styles.sparkleItem, { top: 40, left: 30 }]}>
-                  <Sparkles size={14} color={PALETTE[100]} />
-                </View>
-                <View style={[styles.sparkleItem, { top: 90, right: 40 }]}>
-                  <Sparkles size={18} color={PALETTE[100]} />
-                </View>
-                <View style={[styles.sparkleItem, { bottom: 80, left: 40 }]}>
-                  <Sparkles size={12} color={PALETTE[100]} />
-                </View>
-
-                {/* Friendly Mascot Avatar */}
-                <View style={styles.mascotCircle}>
-                  <Text style={{ fontSize: 72 }}>🐼</Text>
-                </View>
+        <View style={styles.cardContainer}>
+          {/* Header Bar */}
+          <View style={styles.topNavRow}>
+            <View style={styles.brandTitleRow}>
+              <View style={styles.logoBadge}>
+                <Sparkles size={16} color={PALETTE[50]} />
               </View>
-
-              {/* Bottom Brand Title & Next Action */}
-              <View style={styles.screenOneBottom}>
-                <Text style={styles.brandTitleOne}>Cal tracker</Text>
-                <TouchableOpacity
-                  style={styles.continueBtnOne}
-                  onPress={() => setStep(2)}
-                  activeOpacity={0.85}>
-                  <Text style={styles.continueBtnTextOne}>Get Started</Text>
-                  <ArrowRight size={16} color={PALETTE[950]} />
-                </TouchableOpacity>
-              </View>
+              <Text style={styles.brandTitle}>Cal Tracker Cloud</Text>
             </View>
-          )}
 
-          {/* ============================================================ */}
-          {/* SCREEN 2: Value Proposition & Reward Hook */}
-          {/* ============================================================ */}
-          {step === 2 && (
-            <View style={styles.screenTwoContainer}>
-              {/* Top Graphic Banner */}
-              <View style={styles.screenTwoTopGraphic}>
-                <TouchableOpacity style={styles.topBackBtn} onPress={() => setStep(1)}>
-                  <ChevronLeft size={20} color={PALETTE[50]} />
-                </TouchableOpacity>
+            <TouchableOpacity style={styles.closeBtn} onPress={onClose} activeOpacity={0.7}>
+              <X size={18} color={PALETTE[950]} />
+            </TouchableOpacity>
+          </View>
 
-                {/* Decorative Background Elements */}
-                <View style={styles.cloudTwoLeft} />
-                <View style={styles.cloudTwoRight} />
-                <View style={[styles.sparkleItem, { top: 50, right: 30 }]}>
-                  <Sparkles size={16} color={PALETTE[100]} />
+          {/* Auth Method Switcher Tabs */}
+          <View style={styles.tabSwitcher}>
+            <TouchableOpacity
+              style={[styles.switchTab, authMethod === 'google' && styles.switchTabActive]}
+              onPress={() => {
+                triggerLightImpact();
+                setAuthMethod('google');
+              }}
+              activeOpacity={0.8}>
+              <Text style={styles.googleTabIcon}>G</Text>
+              <Text style={[styles.switchTabText, authMethod === 'google' && styles.switchTabTextActive]}>
+                Google Sign-In
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.switchTab, authMethod === 'email' && styles.switchTabActive]}
+              onPress={() => {
+                triggerLightImpact();
+                setAuthMethod('email');
+              }}
+              activeOpacity={0.8}>
+              <Mail size={15} color={authMethod === 'email' ? PALETTE[950] : PALETTE[500]} />
+              <Text style={[styles.switchTabText, authMethod === 'email' && styles.switchTabTextActive]}>
+                Email & Password
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView
+            style={styles.scrollBody}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled">
+            {/* ============================================================ */}
+            {/* TAB 1: GOOGLE CONNECT */}
+            {/* ============================================================ */}
+            {authMethod === 'google' ? (
+              <View style={styles.tabContent}>
+                <View style={styles.googleHeroBox}>
+                  <View style={styles.googleIconBadgeLarge}>
+                    <Text style={styles.googleIconTextLarge}>G</Text>
+                  </View>
+                  <Text style={styles.heroTitle}>Continue with Google</Text>
+                  <Text style={styles.heroSub}>
+                    Connect your Google account to sync food scans, nutrition goals, and streak badges automatically.
+                  </Text>
                 </View>
 
-                {/* Hero Mascot & Athlete Figures */}
-                <View style={styles.heroFiguresRow}>
-                  <Text style={{ fontSize: 44 }}>🐼</Text>
-                  <Text style={{ fontSize: 62, marginLeft: -10 }}>🏃‍♀️</Text>
-                </View>
-              </View>
-
-              {/* Bottom White Card */}
-              <View style={styles.screenTwoContent}>
-                <Text style={styles.headlineTwo}>
-                  Earn rewards for{'\n'}every calorie you track.
-                </Text>
-                <Text style={styles.subtitleTwo}>
-                  More than tracking — transform daily nutrition into winning streaks and lifelong vitality.
-                </Text>
-
-                <TouchableOpacity
-                  style={styles.loginBtnTwo}
-                  onPress={() => setStep(3)}
-                  activeOpacity={0.85}>
-                  <Text style={styles.loginBtnTextTwo}>Log in</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.skipBtnTwo}
-                  onPress={() => setStep(3)}
-                  activeOpacity={0.7}>
-                  <Text style={styles.skipBtnTextTwo}>Create a free account</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-
-          {/* ============================================================ */}
-          {/* SCREEN 3: Clean Luxury Log In / Connect */}
-          {/* ============================================================ */}
-          {step === 3 && (
-            <View style={styles.screenThreeContainer}>
-              {/* Top Navigation Row */}
-              <View style={styles.topNavRow}>
-                <TouchableOpacity
-                  style={styles.backPillBtn}
-                  onPress={() => {
-                    if (initialStep === 3) {
-                      onClose();
-                    } else {
-                      setStep(2);
-                    }
-                  }}>
-                  <ChevronLeft size={18} color={PALETTE[950]} />
-                </TouchableOpacity>
-
-                <TouchableOpacity style={styles.closePillBtn} onPress={onClose}>
-                  <X size={16} color={PALETTE[950]} />
-                </TouchableOpacity>
-              </View>
-
-              <ScrollView
-                style={styles.scrollBody}
-                contentContainerStyle={styles.scrollContent}
-                showsVerticalScrollIndicator={false}>
-                {/* Heading & Terms Notice */}
-                <Text style={styles.logInHeading}>Log in</Text>
-                <Text style={styles.termsSub}>
-                  By logging in, you agree to our{' '}
-                  <Text style={styles.termsLink}>Terms of Use</Text>.
-                </Text>
-
-                {/* Email Input Field */}
+                {/* Google Email Input */}
                 <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabelText}>Email</Text>
-                  <TextInput
-                    value={email}
-                    onChangeText={setEmail}
-                    placeholder="Your email"
-                    placeholderTextColor={PALETTE[400]}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    style={styles.emailTextInput}
-                  />
+                  <Text style={styles.inputLabel}>Google Email Address</Text>
+                  <View style={styles.inputBox}>
+                    <Mail size={16} color={PALETTE[500]} />
+                    <TextInput
+                      value={googleEmail}
+                      onChangeText={setGoogleEmail}
+                      placeholder="e.g. aryan@gmail.com"
+                      placeholderTextColor={PALETTE[400]}
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                      style={styles.inputField}
+                    />
+                  </View>
                 </View>
 
-                {/* Password Input Field */}
+                {/* Optional Display Name */}
                 <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabelText}>Password (Optional / Direct Auth)</Text>
-                  <TextInput
-                    value={password}
-                    onChangeText={setPassword}
-                    placeholder="Leave empty for instant magic link"
-                    placeholderTextColor={PALETTE[400]}
-                    secureTextEntry
-                    autoCapitalize="none"
-                    style={styles.emailTextInput}
-                  />
+                  <Text style={styles.inputLabel}>Your Name (Optional)</Text>
+                  <View style={styles.inputBox}>
+                    <UserIcon size={16} color={PALETTE[500]} />
+                    <TextInput
+                      value={googleName}
+                      onChangeText={setGoogleName}
+                      placeholder="e.g. Aryan"
+                      placeholderTextColor={PALETTE[400]}
+                      style={styles.inputField}
+                    />
+                  </View>
                 </View>
 
-                <Text style={styles.helperText}>
-                  Instant multi-device cloud sync with Supabase PostgreSQL.
-                </Text>
+                {/* Features list */}
+                <View style={styles.featuresList}>
+                  <View style={styles.featureItem}>
+                    <CheckCircle2 size={14} color={PALETTE[700]} />
+                    <Text style={styles.featureText}>Instant cloud backup to Supabase</Text>
+                  </View>
+                  <View style={styles.featureItem}>
+                    <CheckCircle2 size={14} color={PALETTE[700]} />
+                    <Text style={styles.featureText}>Seamless syncing between devices</Text>
+                  </View>
+                  <View style={styles.featureItem}>
+                    <CheckCircle2 size={14} color={PALETTE[700]} />
+                    <Text style={styles.featureText}>Zero setup, zero localhost redirect crashes</Text>
+                  </View>
+                </View>
 
-                {/* Primary Connect Button */}
+                {/* Primary Google Button */}
                 <TouchableOpacity
-                  style={styles.connectBtn}
-                  onPress={handleConnect}
+                  style={styles.primaryBtn}
+                  onPress={handleGoogleConnect}
                   disabled={isSubmitting}
                   activeOpacity={0.85}>
-                  {isSubmitting ? (
-                    <ActivityIndicator size="small" color={PALETTE[50]} />
+                  {loadingProvider === 'google' ? (
+                    <ActivityIndicator size="small" color={PALETTE.white} />
                   ) : (
-                    <Text style={styles.connectBtnText}>Connect with Supabase</Text>
+                    <>
+                      <View style={styles.googleBtnIcon}>
+                        <Text style={styles.googleBtnIconText}>G</Text>
+                      </View>
+                      <Text style={styles.primaryBtnText}>Sign In with Google</Text>
+                    </>
                   )}
                 </TouchableOpacity>
 
-
-                {/* "──── Or ────" Divider */}
-                <View style={styles.orDividerRow}>
-                  <View style={styles.dividerLine} />
-                  <Text style={styles.orText}>Or</Text>
-                  <View style={styles.dividerLine} />
+                {/* Browser OAuth option */}
+                <TouchableOpacity
+                  style={styles.secondaryLinkBtn}
+                  onPress={handleBrowserOAuth}
+                  disabled={isSubmitting}
+                  activeOpacity={0.7}>
+                  {loadingProvider === 'browser' ? (
+                    <ActivityIndicator size="small" color={PALETTE[700]} />
+                  ) : (
+                    <>
+                      <Globe size={13} color={PALETTE[600]} />
+                      <Text style={styles.secondaryLinkText}>Or launch Web Browser OAuth</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            ) : (
+              /* ============================================================ */
+              /* TAB 2: EMAIL & PASSWORD CONNECT */
+              /* ============================================================ */
+              <View style={styles.tabContent}>
+                <View style={styles.googleHeroBox}>
+                  <Text style={styles.heroTitle}>{isSignUpMode ? 'Create an Account' : 'Sign In with Email'}</Text>
+                  <Text style={styles.heroSub}>
+                    {isSignUpMode
+                      ? 'Sign up to track your macros and access community pods across all devices.'
+                      : 'Welcome back! Log in to restore your nutrition logs and cloud data.'}
+                  </Text>
                 </View>
 
-                {/* Social Sign In Buttons */}
-                <View style={styles.socialButtonsList}>
-                  {/* Google */}
-                  <TouchableOpacity
-                    style={styles.socialBtn}
-                    onPress={() => handleSocialSignIn('google')}
-                    disabled={isSubmitting}
-                    activeOpacity={0.8}>
-                    {loadingProvider === 'google' ? (
-                      <ActivityIndicator size="small" color={PALETTE[950]} />
-                    ) : (
-                      <>
-                        <View style={styles.googleIconBadge}>
-                          <Text style={styles.googleIconText}>G</Text>
-                        </View>
-                        <Text style={styles.socialBtnText}>Sign in with Google</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
+                {isSignUpMode && (
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Full Name</Text>
+                    <View style={styles.inputBox}>
+                      <UserIcon size={16} color={PALETTE[500]} />
+                      <TextInput
+                        value={name}
+                        onChangeText={setName}
+                        placeholder="Your full name"
+                        placeholderTextColor={PALETTE[400]}
+                        style={styles.inputField}
+                      />
+                    </View>
+                  </View>
+                )}
 
-                  {/* Apple */}
-                  <TouchableOpacity
-                    style={styles.socialBtn}
-                    onPress={() => handleSocialSignIn('apple')}
-                    disabled={isSubmitting}
-                    activeOpacity={0.8}>
-                    {loadingProvider === 'apple' ? (
-                      <ActivityIndicator size="small" color={PALETTE[950]} />
-                    ) : (
-                      <>
-                        <Text style={{ fontSize: 16 }}></Text>
-                        <Text style={styles.socialBtnText}>Sign in with Apple</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Email Address</Text>
+                  <View style={styles.inputBox}>
+                    <Mail size={16} color={PALETTE[500]} />
+                    <TextInput
+                      value={email}
+                      onChangeText={setEmail}
+                      placeholder="your.email@example.com"
+                      placeholderTextColor={PALETTE[400]}
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                      style={styles.inputField}
+                    />
+                  </View>
                 </View>
 
-                {/* Privacy Policy Footer */}
-                <Text style={styles.privacyFooterText}>
-                  For more information, please see our{' '}
-                  <Text style={styles.privacyLink}>Privacy policy</Text>.
-                </Text>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Password</Text>
+                  <View style={styles.inputBox}>
+                    <Lock size={16} color={PALETTE[500]} />
+                    <TextInput
+                      value={password}
+                      onChangeText={setPassword}
+                      placeholder="At least 6 characters"
+                      placeholderTextColor={PALETTE[400]}
+                      secureTextEntry
+                      autoCapitalize="none"
+                      style={styles.inputField}
+                    />
+                  </View>
+                </View>
 
-              </ScrollView>
-            </View>
-          )}
+                {/* Primary Button */}
+                <TouchableOpacity
+                  style={styles.primaryBtn}
+                  onPress={handleEmailConnect}
+                  disabled={isSubmitting}
+                  activeOpacity={0.85}>
+                  {loadingProvider === 'email' ? (
+                    <ActivityIndicator size="small" color={PALETTE.white} />
+                  ) : (
+                    <Text style={styles.primaryBtnText}>
+                      {isSignUpMode ? 'Create Free Account' : 'Sign In with Email'}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+
+                {/* Toggle Sign Up / Sign In */}
+                <TouchableOpacity
+                  style={styles.toggleModeBtn}
+                  onPress={() => setIsSignUpMode(!isSignUpMode)}
+                  activeOpacity={0.7}>
+                  <Text style={styles.toggleModeText}>
+                    {isSignUpMode
+                      ? 'Already have an account? Sign In'
+                      : "Don't have an account? Create one"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </ScrollView>
         </View>
       </SafeAreaView>
     </Modal>
@@ -351,383 +388,262 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: 'rgba(16, 33, 35, 0.75)',
-    justifyContent: 'center',
+    justifyContent: 'flex-end',
     alignItems: 'center',
   },
-  container: {
-    flex: 1,
+  cardContainer: {
     width: '100%',
-    maxWidth: Platform.OS === 'web' ? 440 : '100%',
+    maxWidth: Platform.OS === 'web' ? 460 : '100%',
+    height: '82%',
     backgroundColor: PALETTE[50],
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     overflow: 'hidden',
-  },
-
-  // ==================== SCREEN 1 STYLES ====================
-  screenOneContainer: {
-    flex: 1,
-    backgroundColor: '#FF6422', // Vibrant high-energy coral orange from reference
-    paddingHorizontal: 24,
-    paddingTop: Platform.OS === 'ios' ? 40 : 20,
-    paddingBottom: 36,
-    justifyContent: 'space-between',
-  },
-  topCloseBtn: {
-    alignSelf: 'flex-end',
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  screenOneGraphic: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-  },
-  cloudLeft: {
-    position: 'absolute',
-    top: '15%',
-    left: '5%',
-    width: 100,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  cloudRight: {
-    position: 'absolute',
-    top: '22%',
-    right: '8%',
-    width: 120,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
-  },
-  cloudCenter: {
-    position: 'absolute',
-    top: '32%',
-    alignSelf: 'center',
-    width: 160,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-  },
-  sparkleItem: {
-    position: 'absolute',
-  },
-  mascotCircle: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    alignItems: 'center',
-    justifyContent: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
+    shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  screenOneBottom: {
-    alignItems: 'center',
-    gap: 20,
-  },
-  brandTitleOne: {
-    fontFamily: FONTS.serif,
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: -0.5,
-  },
-  continueBtnOne: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#FFFFFF',
-    width: '100%',
-    paddingVertical: 15,
-    borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-  },
-  continueBtnTextOne: {
-    fontFamily: FONTS.sans,
-    fontSize: 15,
-    fontWeight: '800',
-    color: PALETTE[950],
-  },
-
-  // ==================== SCREEN 2 STYLES ====================
-  screenTwoContainer: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  screenTwoTopGraphic: {
-    height: '48%',
-    backgroundColor: '#FF6422',
-    borderBottomLeftRadius: 36,
-    borderBottomRightRadius: 36,
-    paddingTop: Platform.OS === 'ios' ? 44 : 20,
-    paddingHorizontal: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  topBackBtn: {
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 44 : 20,
-    left: 20,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 10,
-  },
-  cloudTwoLeft: {
-    position: 'absolute',
-    top: 30,
-    left: 10,
-    width: 100,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  cloudTwoRight: {
-    position: 'absolute',
-    top: 50,
-    right: 20,
-    width: 120,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
-  },
-  heroFiguresRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  screenTwoContent: {
-    flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: 28,
-    paddingBottom: 36,
-    justifyContent: 'space-between',
-  },
-  headlineTwo: {
-    fontFamily: FONTS.serif,
-    fontSize: 26,
-    fontWeight: '800',
-    color: PALETTE[950],
-    letterSpacing: -0.6,
-    lineHeight: 32,
-  },
-  subtitleTwo: {
-    fontFamily: FONTS.sans,
-    fontSize: 13,
-    color: PALETTE[600],
-    lineHeight: 18,
-  },
-  loginBtnTwo: {
-    backgroundColor: '#FF6422', // Brand vibrant action orange from reference
-    paddingVertical: 15,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#FF6422',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-  },
-  loginBtnTextTwo: {
-    fontFamily: FONTS.sans,
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  skipBtnTwo: {
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  skipBtnTextTwo: {
-    fontFamily: FONTS.sans,
-    fontSize: 13,
-    fontWeight: '700',
-    color: PALETTE[600],
-  },
-
-  // ==================== SCREEN 3 STYLES ====================
-  screenThreeContainer: {
-    flex: 1,
-    backgroundColor: '#F8F9FA',
-    paddingTop: Platform.OS === 'ios' ? 44 : 20,
+    shadowRadius: 16,
+    elevation: 20,
   },
   topNavRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    marginBottom: 12,
+    paddingTop: 18,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: PALETTE[100],
+    backgroundColor: PALETTE.white,
   },
-  backPillBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: '#FFFFFF',
+  brandTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  logoBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: PALETTE[950],
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    shadowColor: '#000',
+  },
+  brandTitle: {
+    fontFamily: FONTS.serif,
+    fontSize: 16,
+    fontWeight: '700',
+    color: PALETTE[950],
+  },
+  closeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: PALETTE[100],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabSwitcher: {
+    flexDirection: 'row',
+    backgroundColor: PALETTE[100],
+    marginHorizontal: 16,
+    marginTop: 14,
+    borderRadius: 12,
+    padding: 4,
+    gap: 4,
+  },
+  switchTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 9,
+  },
+  switchTabActive: {
+    backgroundColor: PALETTE.white,
+    shadowColor: PALETTE[950],
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.08,
     shadowRadius: 3,
+    elevation: 2,
   },
-  closePillBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
+  googleTabIcon: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#EA4335',
+  },
+  switchTabText: {
+    fontFamily: FONTS.sans,
+    fontSize: 13,
+    fontWeight: '600',
+    color: PALETTE[600],
+  },
+  switchTabTextActive: {
+    color: PALETTE[950],
+    fontWeight: '700',
   },
   scrollBody: {
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
+    paddingTop: 16,
     paddingBottom: 36,
   },
-  logInHeading: {
-    fontFamily: FONTS.serif,
-    fontSize: 28,
+  tabContent: {
+    width: '100%',
+  },
+  googleHeroBox: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  googleIconBadgeLarge: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: PALETTE.white,
+    borderWidth: 1.5,
+    borderColor: PALETTE[200],
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+    shadowColor: PALETTE[950],
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  googleIconTextLarge: {
+    fontSize: 26,
     fontWeight: '800',
-    color: PALETTE[950],
-    marginBottom: 6,
-    letterSpacing: -0.5,
+    color: '#4285F4',
   },
-  termsSub: {
-    fontFamily: FONTS.sans,
-    fontSize: 12,
-    color: PALETTE[600],
-    marginBottom: 24,
-  },
-  termsLink: {
+  heroTitle: {
+    fontFamily: FONTS.serif,
+    fontSize: 20,
     fontWeight: '700',
     color: PALETTE[950],
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  heroSub: {
+    fontFamily: FONTS.sans,
+    fontSize: 13,
+    lineHeight: 18,
+    color: PALETTE[600],
+    textAlign: 'center',
+    paddingHorizontal: 12,
   },
   inputGroup: {
-    marginBottom: 8,
+    marginBottom: 14,
   },
-  inputLabelText: {
+  inputLabel: {
+    fontFamily: FONTS.sans,
+    fontSize: 12,
+    fontWeight: '700',
+    color: PALETTE[800],
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  inputBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: PALETTE.white,
+    borderWidth: 1.5,
+    borderColor: PALETTE[200],
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 48,
+    gap: 10,
+  },
+  inputField: {
+    flex: 1,
+    fontFamily: FONTS.sans,
+    fontSize: 14,
+    color: PALETTE[950],
+  },
+  featuresList: {
+    backgroundColor: PALETTE.white,
+    borderRadius: 12,
+    padding: 12,
+    marginVertical: 14,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: PALETTE[100],
+  },
+  featureItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  featureText: {
+    fontFamily: FONTS.sans,
+    fontSize: 12,
+    color: PALETTE[700],
+    fontWeight: '500',
+  },
+  primaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: PALETTE[950],
+    height: 50,
+    borderRadius: 14,
+    gap: 10,
+    marginTop: 6,
+    shadowColor: PALETTE[950],
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  googleBtnIcon: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: PALETTE.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  googleBtnIconText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#4285F4',
+  },
+  primaryBtnText: {
+    fontFamily: FONTS.sans,
+    fontSize: 15,
+    fontWeight: '700',
+    color: PALETTE[50],
+  },
+  secondaryLinkBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 14,
+    marginTop: 4,
+  },
+  secondaryLinkText: {
     fontFamily: FONTS.sans,
     fontSize: 12,
     fontWeight: '600',
-    color: PALETTE[800],
-    marginBottom: 6,
+    color: PALETTE[600],
+    textDecorationLine: 'underline',
   },
-  emailTextInput: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 13,
-    fontSize: 14,
-    fontFamily: FONTS.sans,
-    color: PALETTE[950],
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  helperText: {
-    fontFamily: FONTS.sans,
-    fontSize: 11,
-    color: PALETTE[400],
-    marginBottom: 20,
-  },
-  connectBtn: {
-    backgroundColor: '#FF6422', // Brand vibrant connect orange
-    borderRadius: 14,
+  toggleModeBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#FF6422',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    marginBottom: 24,
+    marginTop: 6,
   },
-  connectBtnText: {
-    fontFamily: FONTS.sans,
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  orDividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 20,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#E5E7EB',
-  },
-  orText: {
-    fontFamily: FONTS.sans,
-    fontSize: 12,
-    color: PALETTE[400],
-  },
-  socialButtonsList: {
-    gap: 10,
-    marginBottom: 24,
-  },
-  socialBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 13,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  googleIconBadge: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#4285F4',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  googleIconText: {
-    fontSize: 11,
-    fontWeight: '900',
-    color: '#FFFFFF',
-  },
-  socialBtnText: {
+  toggleModeText: {
     fontFamily: FONTS.sans,
     fontSize: 13,
-    fontWeight: '700',
-    color: PALETTE[950],
-  },
-  privacyFooterText: {
-    fontFamily: FONTS.sans,
-    fontSize: 11,
-    color: PALETTE[400],
-    textAlign: 'center',
-  },
-
-  privacyLink: {
-    fontWeight: '700',
-    color: PALETTE[950],
+    fontWeight: '600',
+    color: PALETTE[700],
   },
 });

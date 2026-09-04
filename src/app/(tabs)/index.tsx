@@ -10,16 +10,31 @@ import {
   RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Flame, Droplet, Plus, Zap } from 'lucide-react-native';
+import {
+  Flame,
+  Droplet,
+  Plus,
+  Zap,
+  Camera,
+  QrCode,
+  Mic,
+  ChefHat,
+  Star,
+  Sparkles,
+  ArrowRight,
+} from 'lucide-react-native';
 import { useNutrition } from '@/context/NutritionContext';
 import { CalorieRing } from '@/components/CalorieRing';
 import { MacroMiniCard } from '@/components/MacroMiniCard';
 import { MealCard } from '@/components/MealCard';
 import { MealResultModal } from '@/components/MealResultModal';
+import { AiCoachCard } from '@/components/AiCoachCard';
+import { VoiceLogModal } from '@/components/VoiceLogModal';
+import { MealPlanModal } from '@/components/MealPlanModal';
 import { getTodayDateString } from '@/services/storage';
-import { MealType, AiFoodDetectionResult, FoodEntry } from '@/types/nutrition';
+import { MealType, AiFoodDetectionResult, FoodEntry, AiMealPlanItem, AiMealPlan } from '@/types/nutrition';
 import { PALETTE, FONTS } from '@/constants/theme';
-import { triggerLightImpact, triggerSelection } from '@/services/hapticsService';
+import { triggerLightImpact, triggerSelection, triggerSuccessFeedback } from '@/services/hapticsService';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -32,6 +47,8 @@ export default function HomeScreen() {
     consumed,
     remaining,
     waterMl,
+    favoriteMeals,
+    dietaryPreference,
     logWater,
     logMeal,
     editMeal,
@@ -39,14 +56,16 @@ export default function HomeScreen() {
     refreshData,
   } = useNutrition();
 
-
   const [modalVisible, setModalVisible] = useState(false);
+  const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
+  const [isMealPlanModalOpen, setIsMealPlanModalOpen] = useState(false);
   const [activeMealType, setActiveMealType] = useState<MealType>('lunch');
   const [editingEntry, setEditingEntry] = useState<FoodEntry | null>(null);
   const [sampleResult, setSampleResult] = useState<AiFoodDetectionResult | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<'all' | MealType>('all');
   const waterTarget = goals.waterMl || 2000;
+
 
   // Pull-to-refresh handler
   const onRefresh = useCallback(async () => {
@@ -81,12 +100,33 @@ export default function HomeScreen() {
     return list;
   }, [selectedDate]);
 
-  // Group entries for active date
-  const dateEntries = useMemo(() => entries.filter((e) => e.date === selectedDate), [entries, selectedDate]);
-  const breakfastEntries = useMemo(() => dateEntries.filter((e) => e.mealType === 'breakfast'), [dateEntries]);
-  const lunchEntries = useMemo(() => dateEntries.filter((e) => e.mealType === 'lunch'), [dateEntries]);
-  const dinnerEntries = useMemo(() => dateEntries.filter((e) => e.mealType === 'dinner'), [dateEntries]);
-  const snackEntries = useMemo(() => dateEntries.filter((e) => e.mealType === 'snack'), [dateEntries]);
+  // Single-pass partitioning of entries for active date (O(N) vs 5x iterations)
+  const { dateEntries, breakfastEntries, lunchEntries, dinnerEntries, snackEntries } = useMemo(() => {
+    const allDate: FoodEntry[] = [];
+    const b: FoodEntry[] = [];
+    const l: FoodEntry[] = [];
+    const d: FoodEntry[] = [];
+    const s: FoodEntry[] = [];
+
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i];
+      if (e.date === selectedDate) {
+        allDate.push(e);
+        if (e.mealType === 'breakfast') b.push(e);
+        else if (e.mealType === 'lunch') l.push(e);
+        else if (e.mealType === 'dinner') d.push(e);
+        else if (e.mealType === 'snack') s.push(e);
+      }
+    }
+
+    return {
+      dateEntries: allDate,
+      breakfastEntries: b,
+      lunchEntries: l,
+      dinnerEntries: d,
+      snackEntries: s,
+    };
+  }, [entries, selectedDate]);
 
   const handleOpenAdd = useCallback((type: MealType) => {
     triggerLightImpact();
@@ -181,7 +221,87 @@ export default function HomeScreen() {
             colors={[PALETTE[950]]}
           />
         }>
-        {/* Main Hero Card (1250 / 2500 Calories eaten + circular ring) */}
+        {/* 1. Personalized AI Coach Card */}
+        <AiCoachCard
+          onActionPress={(rec) => {
+            logMeal({
+              name: rec.name,
+              calories: rec.calories,
+              protein: rec.protein,
+              carbs: rec.carbs,
+              fats: rec.fats,
+              mealType: rec.mealType,
+              portionSize: '1 serving',
+              isAiGenerated: false,
+            });
+          }}
+          onOpenScanner={() => router.push('/(tabs)/scan')}
+        />
+
+        {/* 2. Primary Hero AI Food Scanner Action Card */}
+        <View style={styles.primaryScanHeroCard}>
+          <View style={styles.scanHeroTopRow}>
+            <View style={styles.scanHeroLeft}>
+              <View style={styles.scanHeroBadge}>
+                <Sparkles size={10} color={PALETTE[50]} />
+                <Text style={styles.scanHeroBadgeText}>Instant Gemini Vision</Text>
+              </View>
+              <Text style={styles.scanHeroTitle}>AI Food Scanner</Text>
+              <Text style={styles.scanHeroSub}>
+                Point camera at any meal to extract exact calories, macros & ingredients
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={styles.scanLaunchCameraBtn}
+              onPress={() => {
+                triggerLightImpact();
+                router.push('/(tabs)/scan');
+              }}
+              activeOpacity={0.85}>
+              <Camera size={26} color={PALETTE[950]} />
+              <Text style={styles.scanLaunchCameraText}>Scan</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Quick Shortcuts: Barcode Scan, Voice Log, AI Meal Plan */}
+          <View style={styles.scanShortcutsRow}>
+            <TouchableOpacity
+              style={styles.scanShortcutItem}
+              onPress={() => {
+                triggerLightImpact();
+                router.push('/(tabs)/scan');
+              }}
+              activeOpacity={0.8}>
+              <QrCode size={13} color="#10B981" />
+              <Text style={styles.scanShortcutText}>Barcode</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.scanShortcutItem}
+              onPress={() => {
+                triggerLightImpact();
+                setIsVoiceModalOpen(true);
+              }}
+              activeOpacity={0.8}>
+              <Mic size={13} color="#EC4899" />
+              <Text style={styles.scanShortcutText}>Voice Log</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.scanShortcutItem}
+              onPress={() => {
+                triggerLightImpact();
+                setIsMealPlanModalOpen(true);
+              }}
+              activeOpacity={0.8}>
+              <ChefHat size={13} color="#3B82F6" />
+              <Text style={styles.scanShortcutText}>Meal Plan</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* 3. Main Calorie Hero Card (1250 / 2500 Calories eaten + circular ring) */}
         <View style={styles.heroCard}>
           <View style={styles.heroLeft}>
             <View style={styles.heroCalRow}>
@@ -203,7 +323,7 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* 3 Macro Mini Cards */}
+        {/* 4. 3 Macro Mini Cards */}
         <View style={styles.macrosGrid}>
           <MacroMiniCard
             label="Protein"
@@ -225,7 +345,49 @@ export default function HomeScreen() {
           />
         </View>
 
-        {/* Daily Caloric Energy & Deficit Insight */}
+        {/* 5. Favorites & Quick Log Shelf */}
+        {favoriteMeals.length > 0 && (
+          <View style={styles.favoritesShelf}>
+            <View style={styles.favoritesHeaderRow}>
+              <View style={styles.favoritesTitleRow}>
+                <Star size={13} color="#D97706" fill="#D97706" />
+                <Text style={styles.favoritesTitle}>Favorites & Quick Log</Text>
+              </View>
+              <Text style={styles.favoritesSub}>1-Tap to add to {activeMealType}</Text>
+            </View>
+
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.favoritesScroll}>
+              {favoriteMeals.map((fav) => (
+                <TouchableOpacity
+                  key={fav.id}
+                  style={styles.favoriteChip}
+                  onPress={() => {
+                    triggerSuccessFeedback();
+                    logMeal({
+                      name: fav.name,
+                      calories: fav.calories,
+                      protein: fav.protein,
+                      carbs: fav.carbs,
+                      fats: fav.fats,
+                      mealType: fav.mealType || activeMealType,
+                      portionSize: fav.portionSize,
+                      imageUri: fav.imageUri,
+                      isAiGenerated: false,
+                    });
+                  }}
+                  activeOpacity={0.8}>
+                  <View>
+                    <Text style={styles.favChipName} numberOfLines={1}>{fav.name}</Text>
+                    <Text style={styles.favChipSub}>+{fav.calories} kcal • {fav.protein}g P</Text>
+                  </View>
+                  <Plus size={12} color={PALETTE[950]} />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* 6. Daily Caloric Energy & Deficit Insight */}
         <View style={styles.energyInsightCard}>
           <View style={styles.energyInsightLeft}>
             <View style={styles.energyIconBadge}>
@@ -246,7 +408,7 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Daily Hydration Quick-Log Card */}
+        {/* 7. Daily Hydration Quick-Log Card */}
         <View style={styles.waterCard}>
           <View style={styles.waterHeaderRow}>
             <View style={styles.waterTitleRow}>
@@ -300,8 +462,6 @@ export default function HomeScreen() {
               <Text style={[styles.waterQuickBtnText, { color: '#0284C7' }]}>-250 ml</Text>
             </TouchableOpacity>
           </View>
-
-
         </View>
 
         {/* Meal Category Filter Pills */}
@@ -379,6 +539,59 @@ export default function HomeScreen() {
         <View style={{ height: 40 }} />
       </ScrollView>
 
+      {/* Voice Log Modal */}
+      <VoiceLogModal
+        visible={isVoiceModalOpen}
+        onClose={() => setIsVoiceModalOpen(false)}
+        defaultMealType={activeMealType}
+        onConfirm={(parsed, slot) => {
+          logMeal({
+            name: parsed.foodName,
+            calories: parsed.calories,
+            protein: parsed.protein,
+            carbs: parsed.carbs,
+            fats: parsed.fats,
+            mealType: slot,
+            portionSize: parsed.servingSize,
+            isAiGenerated: true,
+          });
+        }}
+      />
+
+      {/* AI Meal Plan Modal */}
+      <MealPlanModal
+        visible={isMealPlanModalOpen}
+        onClose={() => setIsMealPlanModalOpen(false)}
+        goals={goals}
+        currentPreference={dietaryPreference}
+        onLogMealItem={(item: AiMealPlanItem) => {
+          logMeal({
+            name: item.name,
+            calories: item.calories,
+            protein: item.protein,
+            carbs: item.carbs,
+            fats: item.fats,
+            mealType: item.mealType,
+            portionSize: item.portionSize,
+            isAiGenerated: false,
+          });
+        }}
+        onApplyFullPlan={(plan: AiMealPlan) => {
+          for (const m of plan.meals) {
+            logMeal({
+              name: m.name,
+              calories: m.calories,
+              protein: m.protein,
+              carbs: m.carbs,
+              fats: m.fats,
+              mealType: m.mealType,
+              portionSize: m.portionSize,
+              isAiGenerated: false,
+            });
+          }
+        }}
+      />
+
       {/* Result / Adjustment Sheet */}
       <MealResultModal
         visible={modalVisible}
@@ -423,6 +636,7 @@ export default function HomeScreen() {
           setEditingEntry(null);
         }}
       />
+
     </SafeAreaView>
   );
 }
@@ -518,6 +732,156 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 20,
     paddingBottom: 24,
+  },
+  primaryScanHeroCard: {
+    backgroundColor: PALETTE[900],
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: PALETTE[950],
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.16,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  scanHeroTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  scanHeroLeft: {
+    flex: 1,
+    marginRight: 10,
+  },
+  scanHeroBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(218, 237, 235, 0.15)',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+    marginBottom: 4,
+  },
+  scanHeroBadgeText: {
+    fontFamily: FONTS.sans,
+    fontSize: 9,
+    fontWeight: '700',
+    color: PALETTE[50],
+  },
+  scanHeroTitle: {
+    fontFamily: FONTS.serif,
+    fontSize: 17,
+    fontWeight: '700',
+    color: PALETTE[50],
+  },
+  scanHeroSub: {
+    fontFamily: FONTS.sans,
+    fontSize: 11,
+    color: PALETTE[200],
+    lineHeight: 15,
+    marginTop: 2,
+  },
+  scanLaunchCameraBtn: {
+    width: 60,
+    height: 60,
+    borderRadius: 18,
+    backgroundColor: PALETTE[50],
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: PALETTE[950],
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  scanLaunchCameraText: {
+    fontFamily: FONTS.sans,
+    fontSize: 10,
+    fontWeight: '800',
+    color: PALETTE[950],
+    marginTop: 2,
+  },
+  scanShortcutsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(218, 237, 235, 0.12)',
+    paddingTop: 10,
+  },
+  scanShortcutItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(218, 237, 235, 0.12)',
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  scanShortcutText: {
+    fontFamily: FONTS.sans,
+    fontSize: 11,
+    fontWeight: '700',
+    color: PALETTE[50],
+  },
+  favoritesShelf: {
+    backgroundColor: PALETTE.white,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: PALETTE[100],
+  },
+  favoritesHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  favoritesTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  favoritesTitle: {
+    fontFamily: FONTS.serif,
+    fontSize: 13,
+    fontWeight: '700',
+    color: PALETTE[950],
+  },
+  favoritesSub: {
+    fontFamily: FONTS.sans,
+    fontSize: 10,
+    color: PALETTE[500],
+  },
+  favoritesScroll: {
+    gap: 8,
+  },
+  favoriteChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: PALETTE[50],
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: PALETTE[200],
+  },
+  favChipName: {
+    fontFamily: FONTS.sans,
+    fontSize: 11,
+    fontWeight: '700',
+    color: PALETTE[950],
+    maxWidth: 140,
+  },
+  favChipSub: {
+    fontFamily: FONTS.sans,
+    fontSize: 9,
+    color: PALETTE[600],
   },
   heroCard: {
     backgroundColor: PALETTE.white,

@@ -1,4 +1,3 @@
-import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View, StyleSheet, Platform } from 'react-native';
@@ -68,24 +67,10 @@ function RootNavigationLayout() {
 }
 
 export default function RootLayout() {
-  const customLightTheme = {
-    ...DefaultTheme,
-    colors: {
-      ...DefaultTheme.colors,
-      background: PALETTE[50],
-      card: PALETTE.white,
-      text: PALETTE[950],
-      border: PALETTE[100],
-      primary: PALETTE[950],
-    },
-  };
-
   return (
-    <ThemeProvider value={customLightTheme}>
-      <NutritionProvider>
-        <RootNavigationLayout />
-      </NutritionProvider>
-    </ThemeProvider>
+    <NutritionProvider>
+      <RootNavigationLayout />
+    </NutritionProvider>
   );
 }
 

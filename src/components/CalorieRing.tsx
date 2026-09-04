@@ -11,7 +11,7 @@ interface CalorieRingProps {
   strokeWidth?: number;
 }
 
-export function CalorieRing({
+export const CalorieRing = React.memo(function CalorieRing({
   consumed,
   goal,
   size = 80,
@@ -58,7 +58,7 @@ export function CalorieRing({
       </View>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {

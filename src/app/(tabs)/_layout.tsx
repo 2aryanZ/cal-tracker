@@ -6,7 +6,6 @@ import {
   View,
   TouchableOpacity,
   Text,
-  Modal,
 } from 'react-native';
 import {
   Home,
@@ -14,21 +13,17 @@ import {
   Users,
   User,
   Plus,
-  Camera,
-  Scale,
-  Utensils,
-  X,
-  Sparkles,
 } from 'lucide-react-native';
 import { PALETTE, FONTS } from '@/constants/theme';
 import { triggerSelection, triggerMediumImpact, triggerLightImpact } from '@/services/hapticsService';
 import { useNutrition } from '@/context/NutritionContext';
 import { WeightLogModal } from '@/components/WeightLogModal';
 import { MealResultModal } from '@/components/MealResultModal';
+import { QuickActionHubModal } from '@/components/QuickActionHubModal';
+import { VoiceLogModal } from '@/components/VoiceLogModal';
+import { MealPlanModal } from '@/components/MealPlanModal';
 import { getTodayDateString } from '@/services/storage';
-
-
-import { MealType } from '@/types/nutrition';
+import { MealType, AiMealPlanItem, AiMealPlan } from '@/types/nutrition';
 
 interface CustomTabBarProps {
   state: any;
@@ -131,12 +126,13 @@ function CustomTabBar({ state, navigation, onPlusPress }: CustomTabBarProps) {
 
 export default function TabsLayout() {
   const router = useRouter();
-  const { userProfile, addWeight, logMeal, selectedDate } = useNutrition();
+  const { userProfile, goals, dietaryPreference, addWeight, logMeal, selectedDate } = useNutrition();
 
-
-  const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
+  const [isActionHubOpen, setIsActionHubOpen] = useState(false);
   const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
   const [isMealModalOpen, setIsMealModalOpen] = useState(false);
+  const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
+  const [isMealPlanModalOpen, setIsMealPlanModalOpen] = useState(false);
 
   const handleSaveWeight = async (data: {
     weightKg: number;
@@ -146,7 +142,6 @@ export default function TabsLayout() {
   }) => {
     await addWeight(data);
   };
-
 
   const handleSaveManualMeal = (item: {
     name: string;
@@ -173,11 +168,32 @@ export default function TabsLayout() {
     setIsMealModalOpen(false);
   };
 
+  const handleActionHubSelect = (action: 'scan_food' | 'barcode' | 'voice_log' | 'meal_plan' | 'log_weight' | 'quick_meal') => {
+    switch (action) {
+      case 'scan_food':
+      case 'barcode':
+        router.push('/(tabs)/scan');
+        break;
+      case 'voice_log':
+        setIsVoiceModalOpen(true);
+        break;
+      case 'meal_plan':
+        setIsMealPlanModalOpen(true);
+        break;
+      case 'log_weight':
+        setIsWeightModalOpen(true);
+        break;
+      case 'quick_meal':
+        setIsMealModalOpen(true);
+        break;
+    }
+  };
+
   return (
     <>
       <Tabs
         tabBar={(props) => (
-          <CustomTabBar {...props} onPlusPress={() => setIsActionMenuOpen(true)} />
+          <CustomTabBar {...props} onPlusPress={() => setIsActionHubOpen(true)} />
         )}
         screenOptions={{
           headerShown: false,
@@ -188,102 +204,65 @@ export default function TabsLayout() {
         <Tabs.Screen name="scan" options={{ title: 'Profile' }} />
       </Tabs>
 
-      {/* Quick Action Sheet Modal */}
-      <Modal
-        visible={isActionMenuOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setIsActionMenuOpen(false)}>
-        <TouchableOpacity
-          style={styles.actionModalOverlay}
-          activeOpacity={1}
-          onPress={() => setIsActionMenuOpen(false)}>
-          <View style={styles.actionSheetContainer}>
-            {/* Sheet Header */}
-            <View style={styles.actionSheetHeader}>
-              <View style={styles.sheetTitleRow}>
-                <Sparkles size={16} color={PALETTE[950]} />
-                <Text style={styles.actionSheetTitle}>Quick Actions</Text>
-              </View>
-              <TouchableOpacity
-                style={styles.sheetCloseBtn}
-                onPress={() => setIsActionMenuOpen(false)}>
-                <X size={16} color={PALETTE[600]} />
-              </TouchableOpacity>
-            </View>
+      {/* Quick Actions Hub Modal */}
+      <QuickActionHubModal
+        visible={isActionHubOpen}
+        onClose={() => setIsActionHubOpen(false)}
+        onSelectAction={handleActionHubSelect}
+      />
 
-            {/* Action Option 1: AI Food Camera Scanner */}
-            <TouchableOpacity
-              style={styles.actionOptionCard}
-              onPress={() => {
-                triggerLightImpact();
-                setIsActionMenuOpen(false);
-                router.push('/(tabs)/scan');
-              }}
-              activeOpacity={0.8}>
-              <View style={[styles.actionOptionIconBox, { backgroundColor: PALETTE[900] }]}>
-                <Camera size={20} color={PALETTE[50]} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <View style={styles.optionTitleRow}>
-                  <Text style={styles.actionOptionTitle}>Scan Food with AI</Text>
-                  <View style={styles.aiBadge}>
-                    <Text style={styles.aiBadgeText}>Visual Vision</Text>
-                  </View>
-                </View>
-                <Text style={styles.actionOptionSub}>
-                  Take a photo for instant calories, macros & ingredient breakdown
-                </Text>
-              </View>
-            </TouchableOpacity>
+      {/* Voice Log Modal */}
+      <VoiceLogModal
+        visible={isVoiceModalOpen}
+        onClose={() => setIsVoiceModalOpen(false)}
+        defaultMealType="lunch"
+        onConfirm={(parsed, slot) => {
+          logMeal({
+            name: parsed.foodName,
+            calories: parsed.calories,
+            protein: parsed.protein,
+            carbs: parsed.carbs,
+            fats: parsed.fats,
+            mealType: slot,
+            portionSize: parsed.servingSize,
+            isAiGenerated: true,
+          });
+        }}
+      />
 
-            {/* Action Option 2: Log Body Weight */}
-            <TouchableOpacity
-              style={styles.actionOptionCard}
-              onPress={() => {
-                triggerLightImpact();
-                setIsActionMenuOpen(false);
-                setIsWeightModalOpen(true);
-              }}
-              activeOpacity={0.8}>
-              <View style={[styles.actionOptionIconBox, { backgroundColor: PALETTE[100] }]}>
-                <Scale size={20} color={PALETTE[700]} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <View style={styles.optionTitleRow}>
-                  <Text style={styles.actionOptionTitle}>Log Body Weight</Text>
-                  <View style={styles.trackerBadge}>
-                    <Text style={styles.trackerBadgeText}>Cal AI Suite</Text>
-                  </View>
-                </View>
-                <Text style={styles.actionOptionSub}>
-                  Record your morning weigh-in to update progress & BMI charts
-                </Text>
-              </View>
-            </TouchableOpacity>
-
-            {/* Action Option 3: Quick Manual Meal Entry */}
-            <TouchableOpacity
-              style={styles.actionOptionCard}
-              onPress={() => {
-                triggerLightImpact();
-                setIsActionMenuOpen(false);
-                setIsMealModalOpen(true);
-              }}
-              activeOpacity={0.8}>
-              <View style={[styles.actionOptionIconBox, { backgroundColor: PALETTE[100] }]}>
-                <Utensils size={20} color={PALETTE[600]} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.actionOptionTitle}>Quick Add Meal</Text>
-                <Text style={styles.actionOptionSub}>
-                  Manually enter custom dish name, calories, protein, carbs & fats
-                </Text>
-              </View>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
+      {/* AI Meal Plan Modal */}
+      <MealPlanModal
+        visible={isMealPlanModalOpen}
+        onClose={() => setIsMealPlanModalOpen(false)}
+        goals={goals}
+        currentPreference={dietaryPreference}
+        onLogMealItem={(item: AiMealPlanItem) => {
+          logMeal({
+            name: item.name,
+            calories: item.calories,
+            protein: item.protein,
+            carbs: item.carbs,
+            fats: item.fats,
+            mealType: item.mealType,
+            portionSize: item.portionSize,
+            isAiGenerated: false,
+          });
+        }}
+        onApplyFullPlan={(plan: AiMealPlan) => {
+          for (const m of plan.meals) {
+            logMeal({
+              name: m.name,
+              calories: m.calories,
+              protein: m.protein,
+              carbs: m.carbs,
+              fats: m.fats,
+              mealType: m.mealType,
+              portionSize: m.portionSize,
+              isAiGenerated: false,
+            });
+          }
+        }}
+      />
 
       {/* Interactive Weight Log Modal */}
       <WeightLogModal
