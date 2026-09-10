@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,9 +9,9 @@ import {
   ActivityIndicator,
   Platform,
 } from 'react-native';
-import { Sparkles, X, Check, Utensils, RefreshCw, ChefHat, ArrowRight } from 'lucide-react-native';
+import { X, Check, RefreshCw, ChefHat, ArrowRight } from 'lucide-react-native';
 import { generateDailyMealPlan } from '@/services/mealPlanService';
-import { AiMealPlan, AiMealPlanItem, DietaryPreference, MacroTargets, MealType } from '@/types/nutrition';
+import { AiMealPlan, AiMealPlanItem, DietaryPreference, MacroTargets } from '@/types/nutrition';
 import { PALETTE, FONTS } from '@/constants/theme';
 import { triggerLightImpact, triggerSuccessFeedback } from '@/services/hapticsService';
 
@@ -31,19 +31,18 @@ const DIET_TABS: { key: DietaryPreference; label: string }[] = [
   { key: 'vegan', label: 'Vegan' },
 ];
 
-export function MealPlanModal({
-  visible,
+function MealPlanModalContent({
   onClose,
   goals,
   currentPreference,
   onLogMealItem,
   onApplyFullPlan,
-}: MealPlanModalProps) {
+}: Omit<MealPlanModalProps, 'visible'>) {
   const [preference, setPreference] = useState<DietaryPreference>(currentPreference || 'high_protein');
   const [mealPlan, setMealPlan] = useState<AiMealPlan | null>(null);
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(true);
 
-  const handleGenerate = async (pref?: DietaryPreference) => {
+  const handleGenerate = useCallback(async (pref?: DietaryPreference) => {
     const selectedPref = pref || preference;
     setIsGenerating(true);
     try {
@@ -55,25 +54,34 @@ export function MealPlanModal({
     } finally {
       setIsGenerating(false);
     }
-  };
+  }, [goals, preference]);
 
   useEffect(() => {
-    if (visible) {
-      setPreference(currentPreference || 'high_protein');
-      handleGenerate(currentPreference || 'high_protein');
-    }
-  }, [visible, currentPreference]);
+    let active = true;
+    generateDailyMealPlan(goals, preference)
+      .then((plan) => {
+        if (active) {
+          setMealPlan(plan);
+          triggerSuccessFeedback();
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to generate meal plan:', err);
+      })
+      .finally(() => {
+        if (active) setIsGenerating(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [goals, preference]);
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}>
-      <TouchableOpacity
-        style={styles.overlay}
-        activeOpacity={1}
-        onPress={onClose}>
+    <TouchableOpacity
+      style={styles.overlay}
+      activeOpacity={1}
+      onPress={onClose}>
         <View style={styles.sheet} onStartShouldSetResponder={() => true}>
           {/* Header */}
           <View style={styles.header}>
@@ -190,6 +198,19 @@ export function MealPlanModal({
           ) : null}
         </View>
       </TouchableOpacity>
+  );
+}
+
+export function MealPlanModal(props: MealPlanModalProps) {
+  if (!props.visible) return null;
+
+  return (
+    <Modal
+      visible={props.visible}
+      transparent
+      animationType="slide"
+      onRequestClose={props.onClose}>
+      <MealPlanModalContent {...props} />
     </Modal>
   );
 }

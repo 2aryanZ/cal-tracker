@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -16,8 +16,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Calendar as CalendarIcon,
-  CheckCircle2,
   AlertCircle,
+  CheckCircle2,
   Trophy,
   Drumstick,
   Wheat,
@@ -28,11 +28,7 @@ import {
   BarChart2,
   CalendarDays,
   Sparkles,
-  Repeat,
-  Star,
   Plus,
-  Clock,
-  Zap,
   Users,
   Flame,
   ShieldCheck,
@@ -53,8 +49,6 @@ export default function HistoryScreen() {
     selectedDate,
     setSelectedDate,
     goals,
-    consumed,
-    remaining,
     waterMl,
     logMeal,
     editMeal,
@@ -146,37 +140,39 @@ export default function HistoryScreen() {
     return new Date(year, month - 1, day);
   }, [selectedDate]);
 
-  const handlePrevDay = () => {
+  const handlePrevDay = useCallback(() => {
     triggerSelection();
     const prev = new Date(currentDateObj);
     prev.setDate(prev.getDate() - 1);
     setSelectedDate(prev.toISOString().split('T')[0]);
-  };
+  }, [currentDateObj, setSelectedDate]);
 
-  const handleNextDay = () => {
+  const handleNextDay = useCallback(() => {
     triggerSelection();
     const next = new Date(currentDateObj);
     next.setDate(next.getDate() + 1);
     setSelectedDate(next.toISOString().split('T')[0]);
-  };
+  }, [currentDateObj, setSelectedDate]);
 
   // Touch Swipe Gesture for Calendar Days (Swipe Left = Next Day, Swipe Right = Prev Day)
-  const panResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_, gestureState) => {
-        return Math.abs(gestureState.dx) > 35 && Math.abs(gestureState.dy) < 25;
-      },
-      onPanResponderRelease: (_, gestureState) => {
-        if (gestureState.dx > 45) {
-          // Swiped Right -> Previous Day
-          handlePrevDay();
-        } else if (gestureState.dx < -45) {
-          // Swiped Left -> Next Day
-          handleNextDay();
-        }
-      },
-    })
-  ).current;
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gestureState) => {
+          return Math.abs(gestureState.dx) > 35 && Math.abs(gestureState.dy) < 25;
+        },
+        onPanResponderRelease: (_, gestureState) => {
+          if (gestureState.dx > 45) {
+            // Swiped Right -> Previous Day
+            handlePrevDay();
+          } else if (gestureState.dx < -45) {
+            // Swiped Left -> Next Day
+            handleNextDay();
+          }
+        },
+      }),
+    [handlePrevDay, handleNextDay]
+  );
 
   // Extended Horizontal Scrollable Date Strip (-14 to +14 days centered around selectedDate)
   const dateStrip = useMemo(() => {

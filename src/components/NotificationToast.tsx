@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Text, StyleSheet, Animated, TouchableOpacity, Platform } from 'react-native';
 import { Bell, Flame, X, Utensils } from 'lucide-react-native';
 import { ToastNotification } from '@/types/nutrition';
@@ -10,8 +10,8 @@ interface NotificationToastProps {
 }
 
 export function NotificationToast({ toast, onDismiss }: NotificationToastProps) {
-  const translateY = useRef(new Animated.Value(-120)).current;
-  const opacity = useRef(new Animated.Value(0)).current;
+  const [translateY] = useState(() => new Animated.Value(-120));
+  const [opacity] = useState(() => new Animated.Value(0));
 
   const handleClose = useCallback(() => {
     Animated.parallel([

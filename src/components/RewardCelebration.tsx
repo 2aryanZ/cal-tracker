@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Modal, TouchableOpacity, Animated } from 'react-native';
 import { Flame, Sparkles, Zap, CheckCircle2 } from 'lucide-react-native';
 import { playGoalChime } from '@/services/soundService';
@@ -21,8 +21,8 @@ export function RewardCelebration({
   caloriesAdded,
   onDismiss,
 }: RewardCelebrationProps) {
-  const scaleAnim = useRef(new Animated.Value(0.7)).current;
-  const opacityAnim = useRef(new Animated.Value(0)).current;
+  const [scaleAnim] = useState(() => new Animated.Value(0.7));
+  const [opacityAnim] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
     if (visible) {

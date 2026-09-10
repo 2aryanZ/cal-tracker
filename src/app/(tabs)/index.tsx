@@ -21,7 +21,6 @@ import {
   ChefHat,
   Star,
   Sparkles,
-  ArrowRight,
 } from 'lucide-react-native';
 import { useNutrition } from '@/context/NutritionContext';
 import { CalorieRing } from '@/components/CalorieRing';

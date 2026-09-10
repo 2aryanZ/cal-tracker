@@ -10,6 +10,7 @@ import { NotificationSettings } from '@/types/nutrition';
 let Notifications: any = null;
 try {
   // Expo Go on Android removed remote notification functionality in SDK 53+, throwing on load
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   Notifications = require('expo-notifications');
   if (Notifications?.setNotificationHandler) {
     Notifications.setNotificationHandler({
@@ -23,7 +24,7 @@ try {
       }),
     });
   }
-} catch (e) {
+} catch {
   // Gracefully fallback when running inside Expo Go on Android
   Notifications = null;
 }

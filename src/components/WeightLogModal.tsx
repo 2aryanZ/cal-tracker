@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -20,29 +20,17 @@ interface WeightLogModalProps {
   onSave: (data: { weightKg: number; weightLbs: number; date: string; note?: string }) => void;
 }
 
-export function WeightLogModal({
-  visible,
+function WeightLogModalContent({
   onClose,
   currentWeightKg,
   initialUnit = 'kg',
   onSave,
-}: WeightLogModalProps) {
+}: Omit<WeightLogModalProps, 'visible'>) {
   const [unit, setUnit] = useState<'lbs' | 'kg'>(initialUnit);
   const [weightLbs, setWeightLbs] = useState(String(kgToLbs(currentWeightKg || 78)));
   const [weightKg, setWeightKg] = useState(String(Math.round((currentWeightKg || 78) * 10) / 10));
   const [date, setDate] = useState(getTodayDateString());
   const [note, setNote] = useState('Morning weigh-in');
-
-  useEffect(() => {
-    if (visible) {
-      setUnit(initialUnit);
-      setWeightLbs(String(kgToLbs(currentWeightKg || 78)));
-      setWeightKg(String(Math.round((currentWeightKg || 78) * 10) / 10));
-      setDate(getTodayDateString());
-    }
-  }, [visible, currentWeightKg, initialUnit]);
-
-
 
   const handleUnitToggle = (newUnit: 'lbs' | 'kg') => {
     if (newUnit === unit) return;
@@ -75,14 +63,11 @@ export function WeightLogModal({
     onClose();
   };
 
-  if (!visible) return null;
-
   return (
-    <Modal visible={visible} transparent animationType="fade">
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalCard}>
-          {/* Header */}
-          <View style={styles.modalHeader}>
+    <View style={styles.modalOverlay}>
+      <View style={styles.modalCard}>
+        {/* Header */}
+        <View style={styles.modalHeader}>
             <View style={styles.titleRow}>
               <Scale size={18} color={PALETTE[950]} />
               <Text style={styles.modalTitle}>Record Weigh-in</Text>
@@ -162,6 +147,15 @@ export function WeightLogModal({
           </TouchableOpacity>
         </View>
       </View>
+  );
+}
+
+export function WeightLogModal(props: WeightLogModalProps) {
+  if (!props.visible) return null;
+
+  return (
+    <Modal visible={props.visible} transparent animationType="fade" onRequestClose={props.onClose}>
+      <WeightLogModalContent {...props} />
     </Modal>
   );
 }

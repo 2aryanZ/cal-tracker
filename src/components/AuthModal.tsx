@@ -13,7 +13,6 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import {
-  ChevronLeft,
   X,
   Sparkles,
   Mail,
@@ -40,7 +39,7 @@ export function AuthModal({
   onSignIn,
   initialStep = 3,
 }: AuthModalProps) {
-  const { signInWithGoogle, signInWithApple, signIn } = useNutrition();
+  const { signInWithGoogle, signIn } = useNutrition();
 
   const [authMethod, setAuthMethod] = useState<'google' | 'email'>('google');
   const [googleEmail, setGoogleEmail] = useState('');

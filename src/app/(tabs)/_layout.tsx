@@ -15,7 +15,7 @@ import {
   Plus,
 } from 'lucide-react-native';
 import { PALETTE, FONTS } from '@/constants/theme';
-import { triggerSelection, triggerMediumImpact, triggerLightImpact } from '@/services/hapticsService';
+import { triggerSelection, triggerMediumImpact } from '@/services/hapticsService';
 import { useNutrition } from '@/context/NutritionContext';
 import { WeightLogModal } from '@/components/WeightLogModal';
 import { MealResultModal } from '@/components/MealResultModal';

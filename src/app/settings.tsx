@@ -28,9 +28,6 @@ import {
   Database,
   Droplet,
   RefreshCw,
-  Heart,
-  Activity,
-  Sparkles,
   Utensils,
 } from 'lucide-react-native';
 
@@ -40,7 +37,7 @@ import { sendInstantStreakCelebration, requestNotificationPermissions } from '@/
 import { MacroTargets, NotificationSettings, DietaryPreference } from '@/types/nutrition';
 import { AuthModal } from '@/components/AuthModal';
 import { PALETTE, FONTS } from '@/constants/theme';
-import { triggerLightImpact, triggerSelection, triggerSuccessFeedback } from '@/services/hapticsService';
+import { triggerLightImpact } from '@/services/hapticsService';
 
 const DIET_PRESETS: { name: string; desc: string; goals: MacroTargets; pref: DietaryPreference }[] = [
   {
@@ -81,8 +78,6 @@ export default function SettingsScreen() {
     userAccount,
     dietaryPreference,
     setDietaryPreference,
-    healthSync,
-    updateHealthSync,
     signIn,
     signOut,
     syncCloudNow,

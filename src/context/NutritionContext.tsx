@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, ReactNode } from 'react';
 import * as Haptics from 'expo-haptics';
 import { Platform } from 'react-native';
 import {
@@ -180,7 +180,53 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
     caloriesAdded: 0,
   });
 
-  const loadData = async () => {
+  // Background Cloud Sync to keep data updated across devices
+  const syncCloudBackground = useCallback(async (
+    currentEntries: FoodEntry[],
+    currentGoals: MacroTargets,
+    currentProfile: UserProfile,
+    currentWaterLogs: Record<string, number>
+  ) => {
+    try {
+      const cloudData = await supabaseFetchAllUserData();
+      if (!cloudData) return;
+
+      // Merge food entries (combine unique IDs)
+      if (cloudData.foodEntries && cloudData.foodEntries.length > 0) {
+        const entryMap = new Map<string, FoodEntry>();
+        cloudData.foodEntries.forEach((e) => entryMap.set(e.id, e));
+        currentEntries.forEach((e) => {
+          if (!entryMap.has(e.id)) entryMap.set(e.id, e);
+        });
+        const mergedEntries = Array.from(entryMap.values()).sort(
+          (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        );
+        setEntries(mergedEntries);
+        setAllFoodEntries(mergedEntries);
+      }
+
+      // Merge water logs
+      if (cloudData.waterLogs && Object.keys(cloudData.waterLogs).length > 0) {
+        const mergedWater = { ...currentWaterLogs, ...cloudData.waterLogs };
+        setWaterLogsState(mergedWater);
+        setAllWaterLogs(mergedWater);
+      }
+
+      // Merge goals & profile if present in cloud
+      if (cloudData.goals) {
+        setGoals(cloudData.goals);
+        saveMacroGoals(cloudData.goals);
+      }
+      if (cloudData.profile) {
+        setUserProfile(cloudData.profile);
+        saveUserProfile(cloudData.profile);
+      }
+    } catch (err) {
+      console.warn('Background sync notice:', err);
+    }
+  }, []);
+
+  const loadData = useCallback(async () => {
     try {
       setIsLoading(true);
       await initializeStorage();
@@ -228,8 +274,6 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
         setOnboardingVisible(true);
       }
 
-
-
       // Schedule notifications in background
       scheduleMealReminders(storedNotifs);
 
@@ -242,59 +286,22 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  // Background Cloud Sync to keep data updated across devices
-  const syncCloudBackground = async (
-    currentEntries: FoodEntry[],
-    currentGoals: MacroTargets,
-    currentProfile: UserProfile,
-    currentWaterLogs: Record<string, number>
-  ) => {
-    try {
-      const cloudData = await supabaseFetchAllUserData();
-      if (!cloudData) return;
-
-      // Merge food entries (combine unique IDs)
-      if (cloudData.foodEntries && cloudData.foodEntries.length > 0) {
-        const entryMap = new Map<string, FoodEntry>();
-        cloudData.foodEntries.forEach((e) => entryMap.set(e.id, e));
-        currentEntries.forEach((e) => {
-          if (!entryMap.has(e.id)) entryMap.set(e.id, e);
-        });
-        const mergedEntries = Array.from(entryMap.values()).sort(
-          (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-        );
-        setEntries(mergedEntries);
-        setAllFoodEntries(mergedEntries);
-      }
-
-      // Merge water logs
-      if (cloudData.waterLogs && Object.keys(cloudData.waterLogs).length > 0) {
-        const mergedWater = { ...currentWaterLogs, ...cloudData.waterLogs };
-        setWaterLogsState(mergedWater);
-        setAllWaterLogs(mergedWater);
-      }
-
-      // Merge goals & profile if present in cloud
-      if (cloudData.goals) {
-        setGoals(cloudData.goals);
-        saveMacroGoals(cloudData.goals);
-      }
-      if (cloudData.profile) {
-        setUserProfile(cloudData.profile);
-        saveUserProfile(cloudData.profile);
-      }
-    } catch (err) {
-      console.warn('Background sync notice:', err);
-    }
-  };
+  }, [syncCloudBackground]);
 
   // Initial mount data load
   useEffect(() => {
-    loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    let isMounted = true;
+    const init = async () => {
+      if (isMounted) {
+        await loadData();
+      }
+    };
+    init();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [loadData]);
 
 
   // Compute water consumed for currently selected date
@@ -346,8 +353,22 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
     };
   }, [selectedDate, consumed, goals, activeDateEntries]);
 
+  const showToast = useCallback((title: string, message: string, icon?: string) => {
+    setToastNotification({
+      id: String(Date.now()),
+      title,
+      message,
+      icon,
+      timestamp: Date.now(),
+    });
+  }, []);
+
+  const dismissToast = useCallback(() => {
+    setToastNotification(null);
+  }, []);
+
   // Water Tracking Handlers
-  const logWater = async (amountMl: number, date?: string) => {
+  const logWater = useCallback(async (amountMl: number, date?: string) => {
     const targetDate = date || selectedDate;
     const current = waterLogs[targetDate] ?? (targetDate === getTodayDateString() ? 1500 : 0);
     const newTotal = Math.max(0, current + amountMl);
@@ -363,9 +384,9 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
       `+${amountMl} ml logged (${(newTotal / 1000).toFixed(2)}L / ${((goals.waterMl || 2000) / 1000).toFixed(1)}L)`,
       'droplet'
     );
-  };
+  }, [selectedDate, waterLogs, goals.waterMl, showToast]);
 
-  const setWater = async (totalMl: number, date?: string) => {
+  const setWater = useCallback(async (totalMl: number, date?: string) => {
     const targetDate = date || selectedDate;
     const newTotal = Math.max(0, Math.round(totalMl));
     const updated = await saveWaterForDate(targetDate, newTotal);
@@ -376,10 +397,10 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
 
     triggerSuccessFeedback();
     showToast('Hydration Updated 💧', `Set to ${(newTotal / 1000).toFixed(2)}L for ${targetDate}`, 'droplet');
-  };
+  }, [selectedDate, showToast]);
 
   // Weight Tracking Handlers
-  const addWeight = async (data: { weightKg: number; weightLbs: number; date?: string; note?: string }) => {
+  const addWeight = useCallback(async (data: { weightKg: number; weightLbs: number; date?: string; note?: string }) => {
     const targetDate = data.date || getTodayDateString();
     const updated = await addWeightLog({
       weightKg: data.weightKg,
@@ -395,8 +416,9 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
     await saveUserProfile(updatedProfile);
 
     // Sync to Supabase
+    const entryId = updated[0]?.id || `w_${Date.now()}`;
     supabaseSyncWeightLog({
-      id: updated[0]?.id || `w_${Date.now()}`,
+      id: entryId,
       weightKg: data.weightKg,
       weightLbs: data.weightLbs,
       date: targetDate,
@@ -404,13 +426,12 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
       note: data.note,
     });
 
-
     triggerLightImpact();
     const displayVal = userProfile.unitSystem === 'imperial' ? `${data.weightLbs} lbs` : `${data.weightKg} kg`;
     showToast('Weigh-In Saved', `${displayVal} recorded for ${targetDate}`, 'sparkles');
-  };
+  }, [userProfile, showToast]);
 
-  const deleteWeight = async (id: string) => {
+  const deleteWeight = useCallback(async (id: string) => {
     const updated = await deleteWeightLog(id);
     setWeightLogsState(updated);
     if (updated.length > 0) {
@@ -420,11 +441,10 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
       await saveUserProfile(updatedProfile);
     }
     showToast('Log Removed', 'Weigh-in entry deleted.', 'sparkles');
-  };
+  }, [userProfile, showToast]);
 
   // Authentication Handlers
-  const signIn = async (email: string, name?: string, password?: string) => {
-
+  const signIn = useCallback(async (email: string, name?: string, password?: string) => {
     setIsSyncing(true);
     try {
       // 1. Sign up/in directly with Supabase Auth
@@ -473,9 +493,9 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsSyncing(false);
     }
-  };
+  }, [entries, waterLogs, goals, userProfile, showToast]);
 
-  const signInWithGoogle = async (): Promise<boolean> => {
+  const signInWithGoogle = useCallback(async (): Promise<boolean> => {
     setIsSyncing(true);
     try {
       const res = await supabaseSignInWithGoogle();
@@ -527,9 +547,9 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsSyncing(false);
     }
-  };
+  }, [entries, waterLogs, goals, userProfile, showToast]);
 
-  const signInWithApple = async (): Promise<boolean> => {
+  const signInWithApple = useCallback(async (): Promise<boolean> => {
     setIsSyncing(true);
     try {
       const res = await supabaseSignInWithApple();
@@ -580,25 +600,26 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsSyncing(false);
     }
-  };
+  }, [entries, waterLogs, goals, userProfile, showToast]);
 
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     await supabaseSignOut();
     const account = await signOutUser();
     setUserAccount(account);
     showToast('Signed Out', 'You are now browsing in guest mode.', 'sparkles');
-  };
+  }, [showToast]);
 
-
-  const updateAccount = async (partial: Partial<UserAccount>) => {
-    const updated = { ...userAccount, ...partial };
-    setUserAccount(updated);
-    await saveUserAccount(updated);
+  const updateAccount = useCallback(async (partial: Partial<UserAccount>) => {
+    setUserAccount((prev) => {
+      const updated = { ...prev, ...partial };
+      saveUserAccount(updated);
+      return updated;
+    });
     showToast('Profile Updated', 'Account details saved successfully.', 'sparkles');
-  };
+  }, [showToast]);
 
   // Manual Trigger Full Cloud Sync
-  const syncCloudNow = async () => {
+  const syncCloudNow = useCallback(async () => {
     if (!userAccount.isLoggedIn) {
       showToast('Guest Mode', 'Sign in to sync your data to the cloud.', 'sparkles');
       return;
@@ -642,15 +663,16 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsSyncing(false);
     }
-  };
+  }, [userAccount.isLoggedIn, entries, waterLogs, goals, userProfile, showToast]);
 
   // Food Logging Actions
-  const logMeal = async (meal: Omit<FoodEntry, 'id' | 'timestamp' | 'date'> & { date?: string }) => {
+  const logMeal = useCallback(async (meal: Omit<FoodEntry, 'id' | 'timestamp' | 'date'> & { date?: string }) => {
     try {
       const targetDate = meal.date || selectedDate;
+      const entryId = `entry_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       const newEntry: FoodEntry = {
         ...meal,
-        id: `entry_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        id: entryId,
         timestamp: new Date().toISOString(),
         date: targetDate,
       };
@@ -698,9 +720,9 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.error('Error logging meal:', error);
     }
-  };
+  }, [selectedDate, goals.calories, stats.currentStreak, showToast]);
 
-  const editMeal = async (entry: FoodEntry) => {
+  const editMeal = useCallback(async (entry: FoodEntry) => {
     try {
       const updated = await updateFoodEntry(entry);
       setEntries(updated);
@@ -710,9 +732,9 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.error('Error editing meal:', error);
     }
-  };
+  }, [showToast]);
 
-  const removeMeal = async (id: string) => {
+  const removeMeal = useCallback(async (id: string) => {
     try {
       const updated = await deleteFoodEntry(id);
       setEntries(updated);
@@ -722,16 +744,16 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.error('Error removing meal:', error);
     }
-  };
+  }, [showToast]);
 
-  const updateGoals = async (newGoals: MacroTargets) => {
+  const updateGoals = useCallback(async (newGoals: MacroTargets) => {
     setGoals(newGoals);
     await saveMacroGoals(newGoals);
     supabaseSyncMacroTargets(newGoals);
     showToast('Goals Updated 🎯', `Daily budget: ${newGoals.calories} kcal • ${((newGoals.waterMl || 2000) / 1000).toFixed(1)}L Water`, 'sparkles');
-  };
+  }, [showToast]);
 
-  const saveProfile = async (newProfile: UserProfile, newGoals: MacroTargets) => {
+  const saveProfile = useCallback(async (newProfile: UserProfile, newGoals: MacroTargets) => {
     setUserProfile(newProfile);
     setGoals(newGoals);
     await saveUserProfile(newProfile);
@@ -753,27 +775,13 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
     supabaseSyncUserProfile(newProfile);
     supabaseSyncMacroTargets(newGoals);
     showToast('Nutrition Plan Activated 🎯', `${newGoals.calories} kcal • ${newGoals.protein}g Protein Target`, 'sparkles');
-  };
+  }, [showToast]);
 
-  const updateNotifications = async (newSettings: NotificationSettings) => {
+  const updateNotifications = useCallback(async (newSettings: NotificationSettings) => {
     setNotificationSettings(newSettings);
     await saveNotificationSettings(newSettings);
     await scheduleMealReminders(newSettings);
-  };
-
-  const showToast = (title: string, message: string, icon?: string) => {
-    setToastNotification({
-      id: String(Date.now()),
-      title,
-      message,
-      icon,
-      timestamp: Date.now(),
-    });
-  };
-
-  const dismissToast = () => {
-    setToastNotification(null);
-  };
+  }, []);
 
   // Distinct recent meals logged across all time
   const recentMeals = useMemo(() => {
@@ -869,7 +877,7 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
   }, [stats, weightLogs, userProfile, consumed.protein, goals, waterMl]);
 
   // Favorites management
-  const toggleFavoriteMeal = async (meal: {
+  const toggleFavoriteMeal = useCallback(async (meal: {
     name: string;
     calories: number;
     protein: number;
@@ -896,27 +904,27 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
       showToast('Added to Favorites ⭐', `${meal.name} saved for 1-tap quick logging.`, 'star');
       return true;
     }
-  };
+  }, [favoriteMeals, showToast]);
 
-  const isFavoriteMeal = (name: string): boolean => {
+  const isFavoriteMeal = useCallback((name: string): boolean => {
     return favoriteMeals.some((f) => f.name.toLowerCase() === name.trim().toLowerCase());
-  };
+  }, [favoriteMeals]);
 
-  const setDietaryPreference = async (pref: DietaryPreference) => {
+  const setDietaryPreference = useCallback(async (pref: DietaryPreference) => {
     setDietaryPreferenceState(pref);
     await saveDietaryPreference(pref);
     showToast('Diet Preference Saved', `Set to ${pref.replace('_', ' ').toUpperCase()}`, 'sparkles');
-  };
+  }, [showToast]);
 
-  const updateHealthSync = async (settings: Partial<HealthSyncSettings>) => {
+  const updateHealthSync = useCallback(async (settings: Partial<HealthSyncSettings>) => {
     const updated: HealthSyncSettings = { ...healthSync, ...settings, lastSyncedAt: new Date().toISOString() };
     setHealthSyncState(updated);
     await saveHealthSyncSettings(updated);
     showToast('Health Sync Updated 🩺', 'Biometric sync settings updated.', 'sparkles');
-  };
+  }, [healthSync, showToast]);
 
   // Repeat yesterday's specific meal slot into today
-  const repeatYesterdayMeal = async (mealType: MealType): Promise<number> => {
+  const repeatYesterdayMeal = useCallback(async (mealType: MealType): Promise<number> => {
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     const yesterdayStr = yesterday.toISOString().split('T')[0];
@@ -949,13 +957,13 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
       'sparkles'
     );
     return yesterdayMeals.length;
-  };
+  }, [entries, selectedDate, logMeal, showToast]);
 
-  const dismissReward = () => {
+  const dismissReward = useCallback(() => {
     setRewardState((prev) => ({ ...prev, visible: false }));
-  };
+  }, []);
 
-  const triggerManualReward = () => {
+  const triggerManualReward = useCallback(() => {
     playGoalChime();
     triggerGoalCelebrationHaptic();
     setRewardState({
@@ -965,7 +973,7 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
       subtitle: 'Perfect macro balance today! Keep the momentum going.',
       caloriesAdded: 0,
     });
-  };
+  }, [stats.currentStreak]);
 
 
   const contextValue = useMemo<NutritionContextType>(
@@ -1047,6 +1055,32 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
       rewardState,
       toastNotification,
       onboardingVisible,
+      logMeal,
+      editMeal,
+      removeMeal,
+      logWater,
+      setWater,
+      addWeight,
+      deleteWeight,
+      toggleFavoriteMeal,
+      isFavoriteMeal,
+      setDietaryPreference,
+      updateHealthSync,
+      repeatYesterdayMeal,
+      updateGoals,
+      saveProfile,
+      updateNotifications,
+      signIn,
+      signInWithGoogle,
+      signInWithApple,
+      signOut,
+      updateAccount,
+      syncCloudNow,
+      dismissReward,
+      triggerManualReward,
+      showToast,
+      dismissToast,
+      loadData,
     ]
   );
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
   Platform,
 } from 'react-native';
-import { Mic, MicOff, Sparkles, X, ArrowRight, Volume2, Check } from 'lucide-react-native';
+import { Mic, Sparkles, X, Volume2, Check } from 'lucide-react-native';
 import { parseVoiceMealTranscript } from '@/services/mealPlanService';
 import { AiFoodDetectionResult, MealType } from '@/types/nutrition';
 import { PALETTE, FONTS } from '@/constants/theme';
@@ -29,27 +29,16 @@ const SAMPLE_VOICE_PROMPTS = [
   '1 scoop whey protein shake with banana and peanut butter',
 ];
 
-export function VoiceLogModal({
-  visible,
+function VoiceLogModalContent({
   onClose,
   onConfirm,
   defaultMealType = 'lunch',
-}: VoiceLogModalProps) {
+}: Omit<VoiceLogModalProps, 'visible'>) {
   const [transcript, setTranscript] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [isParsing, setIsParsing] = useState(false);
   const [activeMealType, setActiveMealType] = useState<MealType>(defaultMealType);
   const [parsedResult, setParsedResult] = useState<AiFoodDetectionResult | null>(null);
-
-  useEffect(() => {
-    if (visible) {
-      setTranscript('');
-      setIsListening(false);
-      setIsParsing(false);
-      setParsedResult(null);
-      setActiveMealType(defaultMealType);
-    }
-  }, [visible, defaultMealType]);
 
   const handleStartListening = () => {
     triggerLightImpact();
@@ -90,15 +79,10 @@ export function VoiceLogModal({
   };
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}>
-      <TouchableOpacity
-        style={styles.overlay}
-        activeOpacity={1}
-        onPress={onClose}>
+    <TouchableOpacity
+      style={styles.overlay}
+      activeOpacity={1}
+      onPress={onClose}>
         <View style={styles.sheet} onStartShouldSetResponder={() => true}>
           {/* Header */}
           <View style={styles.header}>
@@ -236,6 +220,19 @@ export function VoiceLogModal({
           )}
         </View>
       </TouchableOpacity>
+  );
+}
+
+export function VoiceLogModal(props: VoiceLogModalProps) {
+  if (!props.visible) return null;
+
+  return (
+    <Modal
+      visible={props.visible}
+      transparent
+      animationType="slide"
+      onRequestClose={props.onClose}>
+      <VoiceLogModalContent {...props} />
     </Modal>
   );
 }

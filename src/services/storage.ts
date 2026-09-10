@@ -273,10 +273,14 @@ export async function saveFoodEntry(entry: FoodEntry): Promise<{ entries: FoodEn
   }
 }
 
+let cachedGoals: MacroTargets | null = null;
+
 export async function getMacroGoals(): Promise<MacroTargets> {
+  if (cachedGoals) return cachedGoals;
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEYS.GOALS);
-    return raw ? JSON.parse(raw) : DEFAULT_GOALS;
+    cachedGoals = raw ? JSON.parse(raw) : DEFAULT_GOALS;
+    return cachedGoals!;
   } catch (error) {
     console.error('Error fetching goals:', error);
     return DEFAULT_GOALS;
@@ -285,6 +289,7 @@ export async function getMacroGoals(): Promise<MacroTargets> {
 
 export async function saveMacroGoals(goals: MacroTargets): Promise<void> {
   try {
+    cachedGoals = goals;
     await AsyncStorage.setItem(STORAGE_KEYS.GOALS, JSON.stringify(goals));
   } catch (error) {
     console.error('Error saving goals:', error);
@@ -364,10 +369,14 @@ export async function deleteFoodEntry(id: string): Promise<FoodEntry[]> {
   }
 }
 
+let cachedProfile: UserProfile | null = null;
+
 export async function getUserProfile(): Promise<UserProfile> {
+  if (cachedProfile) return cachedProfile;
   try {
     const raw = await AsyncStorage.getItem(STORAGE_KEYS.USER_PROFILE);
-    return raw ? JSON.parse(raw) : DEFAULT_PROFILE;
+    cachedProfile = raw ? JSON.parse(raw) : DEFAULT_PROFILE;
+    return cachedProfile!;
   } catch {
     return DEFAULT_PROFILE;
   }
@@ -375,6 +384,7 @@ export async function getUserProfile(): Promise<UserProfile> {
 
 export async function saveUserProfile(profile: UserProfile): Promise<void> {
   try {
+    cachedProfile = profile;
     await AsyncStorage.setItem(STORAGE_KEYS.USER_PROFILE, JSON.stringify(profile));
   } catch (error) {
     console.error('Error saving user profile:', error);

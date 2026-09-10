@@ -7,7 +7,6 @@ import {
   MealType,
 } from '@/types/nutrition';
 import { getApiKey } from './storage';
-import { COMPREHENSIVE_FOOD_DATABASE } from './aiFoodService';
 
 /**
  * Parses spoken or natural language meal descriptions into structured macros & ingredients

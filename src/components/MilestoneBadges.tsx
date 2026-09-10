@@ -14,7 +14,7 @@ import {
 } from 'lucide-react-native';
 import { MilestoneBadge } from '@/types/nutrition';
 import { PALETTE, FONTS } from '@/constants/theme';
-import { triggerLightImpact, triggerSelection } from '@/services/hapticsService';
+import { triggerLightImpact } from '@/services/hapticsService';
 
 interface MilestoneBadgesProps {
   badges: MilestoneBadge[];

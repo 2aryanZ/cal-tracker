@@ -21,9 +21,7 @@ import {
   Zap,
   Activity,
   Calendar,
-  Award,
   Sparkles,
-  PieChart,
   BarChart3,
 } from 'lucide-react-native';
 import { useNutrition } from '@/context/NutritionContext';
@@ -166,7 +164,6 @@ export default function AnalyticsScreen() {
   // Macro Adherence & Trend Analysis Calculations (O(N) single pass)
   const trendAnalysis = useMemo(() => {
     const todayStr = getTodayDateString();
-    let dayCalories = 0;
     let dayProtein = 0;
     let dayCarbs = 0;
     let dayFats = 0;
@@ -174,7 +171,6 @@ export default function AnalyticsScreen() {
     for (let i = 0; i < entries.length; i++) {
       const e = entries[i];
       if (e.date === todayStr) {
-        dayCalories += Number(e.calories) || 0;
         dayProtein += Number(e.protein) || 0;
         dayCarbs += Number(e.carbs) || 0;
         dayFats += Number(e.fats) || 0;

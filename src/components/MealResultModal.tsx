@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -48,15 +48,16 @@ interface MealResultModalProps {
   editingEntry?: FoodEntry | null;
   defaultMealType?: MealType;
   imageUri?: string;
-  onConfirm: (item: {
+  onConfirm: (data: {
     id?: string;
     name: string;
+    foodName?: string;
     calories: number;
     protein: number;
     carbs: number;
     fats: number;
-    mealType: MealType;
     portionSize: string;
+    mealType: MealType;
     imageUri?: string;
   }) => void;
   onDeleteEntry?: (id: string) => void;
@@ -65,8 +66,80 @@ interface MealResultModalProps {
 const DEFAULT_IMAGE =
   'https://images.unsplash.com/photo-1540420773420-3366772f4999?w=350&q=75&auto=format&fit=crop';
 
-export function MealResultModal({
-  visible,
+function getInitialMealState(
+  editingEntry?: FoodEntry | null,
+  result?: AiFoodDetectionResult | null,
+  defaultMealType: MealType = 'lunch',
+  imageUri?: string
+) {
+  if (editingEntry) {
+    return {
+      foodName: editingEntry.name || '',
+      calories: String(editingEntry.calories || 0),
+      protein: String(editingEntry.protein || 0),
+      carbs: String(editingEntry.carbs || 0),
+      fats: String(editingEntry.fats || 0),
+      portion: editingEntry.portionSize || '1 serving',
+      mealType: editingEntry.mealType || 'lunch',
+      selectedPhoto: editingEntry.imageUri || DEFAULT_IMAGE,
+      ingredients: [
+        {
+          id: '1',
+          name: editingEntry.name || 'Main Portion',
+          portion: editingEntry.portionSize || '1 serving',
+          calories: editingEntry.calories || 0,
+        },
+      ],
+    };
+  }
+  if (result) {
+    const ingredients =
+      result.breakdown && result.breakdown.length > 0
+        ? result.breakdown.map((b, i) => ({
+            id: `ing_${i}`,
+            name: b.item,
+            portion: b.portion,
+            calories: b.calories,
+          }))
+        : [
+            {
+              id: '1',
+              name: result.foodName || 'Main Portion',
+              portion: result.servingSize || '1 serving',
+              calories: result.calories || 450,
+            },
+          ];
+    return {
+      foodName: result.foodName || 'Detected Meal',
+      calories: String(Math.round(result.calories || 450)),
+      protein: String(Math.round(result.protein || 30)),
+      carbs: String(Math.round(result.carbs || 45)),
+      fats: String(Math.round(result.fats || 15)),
+      portion: result.servingSize || '1 serving',
+      mealType: defaultMealType || 'lunch',
+      selectedPhoto: imageUri || DEFAULT_IMAGE,
+      ingredients,
+    };
+  }
+  return {
+    foodName: 'Grilled Chicken Caesar Salad',
+    calories: '520',
+    protein: '46',
+    carbs: '18',
+    fats: '28',
+    portion: '1 bowl (350g)',
+    mealType: defaultMealType || 'lunch',
+    selectedPhoto: imageUri || DEFAULT_IMAGE,
+    ingredients: [
+      { id: '1', name: 'Grilled Chicken Breast', portion: '180g', calories: 290 },
+      { id: '2', name: 'Mixed Greens & Cucumber', portion: '100g', calories: 30 },
+      { id: '3', name: 'Olive Oil & Caesar Dressing', portion: '30ml', calories: 140 },
+      { id: '4', name: 'Parmesan & Croutons', portion: '40g', calories: 60 },
+    ],
+  };
+}
+
+function MealResultModalContent({
   onClose,
   result,
   editingEntry,
@@ -74,93 +147,19 @@ export function MealResultModal({
   imageUri,
   onConfirm,
   onDeleteEntry,
-}: MealResultModalProps) {
-  const [foodName, setFoodName] = useState('');
-  const [calories, setCalories] = useState('450');
-  const [protein, setProtein] = useState('30');
-  const [carbs, setCarbs] = useState('45');
-  const [fats, setFats] = useState('15');
-  const [portion, setPortion] = useState('1 serving');
-  const [mealType, setMealType] = useState<MealType>(defaultMealType);
+}: Omit<MealResultModalProps, 'visible'>) {
+  const [initialData] = useState(() => getInitialMealState(editingEntry, result, defaultMealType, imageUri));
+  const [foodName, setFoodName] = useState(initialData.foodName);
+  const [calories, setCalories] = useState(initialData.calories);
+  const [protein, setProtein] = useState(initialData.protein);
+  const [carbs, setCarbs] = useState(initialData.carbs);
+  const [fats, setFats] = useState(initialData.fats);
+  const [portion, setPortion] = useState(initialData.portion);
+  const [mealType, setMealType] = useState<MealType>(initialData.mealType);
   const [multiplier, setMultiplier] = useState(1);
-  const [selectedPhoto, setSelectedPhoto] = useState<string>(DEFAULT_IMAGE);
-  const [ingredients, setIngredients] = useState<IngredientItem[]>([]);
+  const [selectedPhoto, setSelectedPhoto] = useState<string>(initialData.selectedPhoto);
+  const [ingredients, setIngredients] = useState<IngredientItem[]>(initialData.ingredients);
   const [searchFilter, setSearchFilter] = useState('');
-
-  // Ref to track modal open/close transitions so user edits are NEVER clobbered on re-render
-  const wasVisibleRef = useRef(false);
-
-  useEffect(() => {
-    if (visible && !wasVisibleRef.current) {
-      // Modal just opened! Populate initial state ONCE.
-      if (editingEntry) {
-        setFoodName(editingEntry.name || '');
-        setCalories(String(editingEntry.calories || 0));
-        setProtein(String(editingEntry.protein || 0));
-        setCarbs(String(editingEntry.carbs || 0));
-        setFats(String(editingEntry.fats || 0));
-        setPortion(editingEntry.portionSize || '1 serving');
-        setMealType(editingEntry.mealType || 'lunch');
-        setSelectedPhoto(editingEntry.imageUri || DEFAULT_IMAGE);
-        setMultiplier(1);
-        setIngredients([
-          {
-            id: '1',
-            name: editingEntry.name || 'Main Portion',
-            portion: editingEntry.portionSize || '1 serving',
-            calories: editingEntry.calories || 0,
-          },
-        ]);
-      } else if (result) {
-        setFoodName(result.foodName || 'Detected Meal');
-        setCalories(String(Math.round(result.calories || 450)));
-        setProtein(String(Math.round(result.protein || 30)));
-        setCarbs(String(Math.round(result.carbs || 45)));
-        setFats(String(Math.round(result.fats || 15)));
-        setPortion(result.servingSize || '1 serving');
-        setSelectedPhoto(imageUri || DEFAULT_IMAGE);
-        setMultiplier(1);
-        setMealType(defaultMealType || 'lunch');
-
-        if (result.breakdown && result.breakdown.length > 0) {
-          setIngredients(
-            result.breakdown.map((b, i) => ({
-              id: `ing_${i}_${Date.now()}`,
-              name: b.item,
-              portion: b.portion,
-              calories: b.calories,
-            }))
-          );
-        } else {
-          setIngredients([
-            {
-              id: '1',
-              name: result.foodName || 'Main Portion',
-              portion: result.servingSize || '1 serving',
-              calories: result.calories || 450,
-            },
-          ]);
-        }
-      } else {
-        setFoodName('Grilled Chicken Caesar Salad');
-        setCalories('520');
-        setProtein('46');
-        setCarbs('18');
-        setFats('28');
-        setPortion('1 bowl (350g)');
-        setMealType(defaultMealType || 'lunch');
-        setSelectedPhoto(imageUri || DEFAULT_IMAGE);
-        setMultiplier(1);
-        setIngredients([
-          { id: '1', name: 'Grilled Chicken Breast', portion: '180g', calories: 290 },
-          { id: '2', name: 'Mixed Greens & Cucumber', portion: '100g', calories: 30 },
-          { id: '3', name: 'Olive Oil & Caesar Dressing', portion: '30ml', calories: 140 },
-          { id: '4', name: 'Parmesan & Croutons', portion: '40g', calories: 60 },
-        ]);
-      }
-    }
-    wasVisibleRef.current = visible;
-  }, [visible, editingEntry, result, defaultMealType, imageUri]);
 
   const handlePickPhoto = async () => {
     try {
@@ -267,6 +266,7 @@ export function MealResultModal({
     onConfirm({
       id: editingEntry?.id,
       name: foodName.trim() || 'Logged Meal',
+      foodName: foodName.trim() || 'Logged Meal',
       calories: Number(calories) || 0,
       protein: Number(protein) || 0,
       carbs: Number(carbs) || 0,
@@ -287,11 +287,8 @@ export function MealResultModal({
 
   const filteredPresets = searchFoodDatabase(searchFilter);
 
-  if (!visible) return null;
-
   return (
-    <Modal visible={visible} animationType="slide" transparent>
-      <View style={styles.overlay}>
+    <View style={styles.overlay}>
         {/* Top Header Controls */}
         <View style={styles.topBar}>
           <TouchableOpacity onPress={onClose} style={styles.topIconBtn}>
@@ -620,6 +617,17 @@ export function MealResultModal({
           </ScrollView>
         </View>
       </View>
+  );
+}
+
+export function MealResultModal(props: MealResultModalProps) {
+  if (!props.visible) return null;
+
+  const contentKey = props.editingEntry?.id || (props.result?.foodName ? 'result' : 'new');
+
+  return (
+    <Modal visible={props.visible} animationType="slide" transparent onRequestClose={props.onClose}>
+      <MealResultModalContent key={contentKey} {...props} />
     </Modal>
   );
 }

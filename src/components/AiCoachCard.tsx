@@ -1,10 +1,10 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { Sparkles, ArrowRight, Zap, Target, Flame, RefreshCw } from 'lucide-react-native';
+import { Sparkles, ArrowRight, Zap, Target, Flame } from 'lucide-react-native';
 import { useNutrition } from '@/context/NutritionContext';
 import { generateCoachInsight } from '@/services/aiCoachService';
 import { PALETTE, FONTS } from '@/constants/theme';
-import { triggerLightImpact, triggerSelection } from '@/services/hapticsService';
+import { triggerLightImpact } from '@/services/hapticsService';
 import { MealType } from '@/types/nutrition';
 
 interface AiCoachCardProps {

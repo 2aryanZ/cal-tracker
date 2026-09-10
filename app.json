@@ -2,14 +2,14 @@
   "expo": {
     "name": "Cal AI - Calorie Tracker",
     "slug": "cal-tracker",
-    "version": "1.1.1",
+    "version": "1.1.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "caltracker",
     "userInterfaceStyle": "automatic",
     "ios": {
       "bundleIdentifier": "com.caltracker.app",
-      "buildNumber": "3",
+      "buildNumber": "5",
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "Cal AI uses your camera to scan meals, recognize food items, and calculate calories and macronutrients.",
@@ -20,12 +20,12 @@
     },
     "android": {
       "package": "com.caltracker.app",
-      "versionCode": 4,
+      "versionCode": 5,
 
 
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundColor": "#102123"
+        "backgroundColor": "#052e16"
       },
       "permissions": [
         "android.permission.CAMERA",
@@ -46,7 +46,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#102123",
+          "backgroundColor": "#052e16",
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 180,
           "resizeMode": "contain"
