@@ -30,10 +30,11 @@ import { MealResultModal } from '@/components/MealResultModal';
 import { AiCoachCard } from '@/components/AiCoachCard';
 import { VoiceLogModal } from '@/components/VoiceLogModal';
 import { MealPlanModal } from '@/components/MealPlanModal';
-import { getTodayDateString } from '@/services/storage';
+import { getTodayDateString, toLocalDateString } from '@/services/storage';
 import { MealType, AiFoodDetectionResult, FoodEntry, AiMealPlanItem, AiMealPlan } from '@/types/nutrition';
 import { PALETTE, FONTS } from '@/constants/theme';
 import { triggerLightImpact, triggerSelection, triggerSuccessFeedback } from '@/services/hapticsService';
+import { calculatePersonalizedWaterIntake } from '@/services/tdeeCalculator';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -48,6 +49,7 @@ export default function HomeScreen() {
     waterMl,
     favoriteMeals,
     dietaryPreference,
+    userProfile,
     logWater,
     logMeal,
     editMeal,
@@ -63,7 +65,22 @@ export default function HomeScreen() {
   const [sampleResult, setSampleResult] = useState<AiFoodDetectionResult | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<'all' | MealType>('all');
-  const waterTarget = goals.waterMl || 2000;
+
+  // Evidence-based personalized hydration computed from weight & height
+  const personalizedHydration = useMemo(() => {
+    return calculatePersonalizedWaterIntake(
+      userProfile?.weightKg || 78,
+      userProfile?.heightCm || 178,
+      userProfile?.gender || 'male',
+      userProfile?.activityLevel || 'moderate',
+      userProfile?.goal || 'fat_loss'
+    );
+  }, [userProfile]);
+
+  const waterTarget = goals.waterMl || personalizedHydration.dailyWaterMl;
+  const currentGlasses = Math.floor(waterMl / 250);
+  const targetGlasses = Math.round(waterTarget / 250);
+  const waterPercent = Math.min(100, Math.round((waterMl / waterTarget) * 100));
 
 
   // Pull-to-refresh handler
@@ -84,7 +101,7 @@ export default function HomeScreen() {
     for (let i = 0; i < 7; i++) {
       const d = new Date(startOfWeek);
       d.setDate(startOfWeek.getDate() + i);
-      const dateStr = d.toISOString().split('T')[0];
+      const dateStr = toLocalDateString(d);
       const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
       const dayNum = d.getDate();
 
@@ -407,23 +424,38 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* 7. Daily Hydration Quick-Log Card */}
+        {/* 7. Evidence-Based Daily Hydration Card */}
         <View style={styles.waterCard}>
           <View style={styles.waterHeaderRow}>
             <View style={styles.waterTitleRow}>
-              <Droplet size={16} color="#0284C7" fill="#0284C7" />
-              <Text style={styles.waterTitle}>Daily Hydration</Text>
+              <View style={styles.waterIconCircle}>
+                <Droplet size={15} color="#0284C7" fill="#0284C7" />
+              </View>
+              <View>
+                <Text style={styles.waterTitle}>Daily Hydration</Text>
+                <Text style={styles.waterSub}>
+                  {currentGlasses} of ~{targetGlasses} glasses (250 ml)
+                </Text>
+              </View>
             </View>
-            <Text style={styles.waterAmountText}>
-              {(waterMl / 1000).toFixed(2)}L <Text style={styles.waterTargetText}>/ {(waterTarget / 1000).toFixed(1)}L</Text>
-            </Text>
+            <View style={styles.waterAmountContainer}>
+              <Text style={styles.waterAmountText}>
+                {(waterMl / 1000).toFixed(2)}L{' '}
+                <Text style={styles.waterTargetText}>/ {(waterTarget / 1000).toFixed(1)}L</Text>
+              </Text>
+              <View style={[styles.waterBadge, waterPercent >= 100 && styles.waterBadgeDone]}>
+                <Text style={[styles.waterBadgeText, waterPercent >= 100 && styles.waterBadgeTextDone]}>
+                  {waterPercent >= 100 ? 'Target Met 🎉' : `${waterPercent}%`}
+                </Text>
+              </View>
+            </View>
           </View>
 
           <View style={styles.waterProgressTrack}>
             <View
               style={[
                 styles.waterProgressFill,
-                { width: `${Math.min(100, Math.round((waterMl / waterTarget) * 100))}%` },
+                { width: `${Math.min(100, waterPercent)}%` },
               ]}
             />
           </View>
@@ -1025,37 +1057,55 @@ const styles = StyleSheet.create({
   },
   waterCard: {
     backgroundColor: PALETTE.white,
-    borderRadius: 14,
+    borderRadius: 16,
     padding: 14,
     marginBottom: 14,
     borderWidth: 1,
-    borderColor: PALETTE[100],
-    shadowColor: PALETTE[950],
+    borderColor: '#E0F2FE',
+    shadowColor: '#0284C7',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
-    elevation: 1,
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   waterHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   waterTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
+  },
+  waterIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#E0F2FE',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   waterTitle: {
     fontFamily: FONTS.serif,
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '700',
     color: PALETTE[950],
   },
+  waterSub: {
+    fontFamily: FONTS.sans,
+    fontSize: 11,
+    color: PALETTE[500],
+    marginTop: 1,
+  },
+  waterAmountContainer: {
+    alignItems: 'flex-end',
+    gap: 3,
+  },
   waterAmountText: {
     fontFamily: FONTS.serif,
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '700',
     color: '#0284C7',
   },
@@ -1065,19 +1115,37 @@ const styles = StyleSheet.create({
     color: PALETTE[400],
     fontWeight: '500',
   },
+  waterBadge: {
+    backgroundColor: '#E0F2FE',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  waterBadgeDone: {
+    backgroundColor: '#DCFCE7',
+  },
+  waterBadgeText: {
+    fontFamily: FONTS.sans,
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#0284C7',
+  },
+  waterBadgeTextDone: {
+    color: '#16A34A',
+  },
   waterProgressTrack: {
-    height: 6,
+    height: 8,
     backgroundColor: '#F0F9FF',
-    borderRadius: 4,
+    borderRadius: 6,
     overflow: 'hidden',
-    marginBottom: 10,
+    marginBottom: 12,
     borderWidth: 1,
     borderColor: '#E0F2FE',
   },
   waterProgressFill: {
     height: '100%',
     backgroundColor: '#0284C7',
-    borderRadius: 4,
+    borderRadius: 6,
   },
   waterQuickBtnsRow: {
     flexDirection: 'row',
@@ -1090,8 +1158,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 4,
     backgroundColor: '#F0F9FF',
-    paddingVertical: 7,
-    borderRadius: 8,
+    paddingVertical: 8,
+    borderRadius: 9,
     borderWidth: 1,
     borderColor: '#BAE6FD',
   },

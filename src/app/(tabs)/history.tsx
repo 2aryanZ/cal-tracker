@@ -36,7 +36,7 @@ import {
 import { useNutrition } from '@/context/NutritionContext';
 import { MealCard } from '@/components/MealCard';
 import { MealResultModal } from '@/components/MealResultModal';
-import { formatDateLabel, getTodayDateString, getCommunityGroups, saveCommunityGroups, DEFAULT_COMMUNITY_GROUPS } from '@/services/storage';
+import { formatDateLabel, getTodayDateString, toLocalDateString, getCommunityGroups, saveCommunityGroups, DEFAULT_COMMUNITY_GROUPS } from '@/services/storage';
 import { MealType, AiFoodDetectionResult, FoodEntry, CommunityGroup } from '@/types/nutrition';
 import { PALETTE, FONTS } from '@/constants/theme';
 import { triggerSelection, triggerLightImpact, triggerSuccessFeedback } from '@/services/hapticsService';
@@ -144,14 +144,14 @@ export default function HistoryScreen() {
     triggerSelection();
     const prev = new Date(currentDateObj);
     prev.setDate(prev.getDate() - 1);
-    setSelectedDate(prev.toISOString().split('T')[0]);
+    setSelectedDate(toLocalDateString(prev));
   }, [currentDateObj, setSelectedDate]);
 
   const handleNextDay = useCallback(() => {
     triggerSelection();
     const next = new Date(currentDateObj);
     next.setDate(next.getDate() + 1);
-    setSelectedDate(next.toISOString().split('T')[0]);
+    setSelectedDate(toLocalDateString(next));
   }, [currentDateObj, setSelectedDate]);
 
   // Touch Swipe Gesture for Calendar Days (Swipe Left = Next Day, Swipe Right = Prev Day)
@@ -174,6 +174,21 @@ export default function HistoryScreen() {
     [handlePrevDay, handleNextDay]
   );
 
+  // O(N) single-pass date index map for instantaneous O(1) day lookups
+  const entriesByDate = useMemo(() => {
+    const map = new Map<string, FoodEntry[]>();
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i];
+      const list = map.get(e.date);
+      if (list) {
+        list.push(e);
+      } else {
+        map.set(e.date, [e]);
+      }
+    }
+    return map;
+  }, [entries]);
+
   // Extended Horizontal Scrollable Date Strip (-14 to +14 days centered around selectedDate)
   const dateStrip = useMemo(() => {
     const [year, month, day] = selectedDate.split('-').map(Number);
@@ -183,15 +198,12 @@ export default function HistoryScreen() {
     for (let i = -14; i <= 14; i++) {
       const d = new Date(centerDate);
       d.setDate(centerDate.getDate() + i);
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, '0');
-      const dayStr = String(d.getDate()).padStart(2, '0');
-      const dateStr = `${y}-${m}-${dayStr}`;
+      const dateStr = toLocalDateString(d);
 
       const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
       const dayNum = d.getDate();
 
-      const dayEntries = entries.filter((e) => e.date === dateStr);
+      const dayEntries = entriesByDate.get(dateStr) || [];
       const dayCal = dayEntries.reduce((sum, e) => sum + (Number(e.calories) || 0), 0);
 
       strip.push({
@@ -204,19 +216,34 @@ export default function HistoryScreen() {
       });
     }
     return strip;
-  }, [entries, selectedDate]);
+  }, [entriesByDate, selectedDate]);
 
-  // Group entries for this date
-  const dayEntries = useMemo(() => entries.filter((e) => e.date === selectedDate), [entries, selectedDate]);
+  // Group entries for this date in O(1)
+  const dayEntries = useMemo(() => entriesByDate.get(selectedDate) || [], [entriesByDate, selectedDate]);
   const breakfastEntries = useMemo(() => dayEntries.filter((e) => e.mealType === 'breakfast'), [dayEntries]);
   const lunchEntries = useMemo(() => dayEntries.filter((e) => e.mealType === 'lunch'), [dayEntries]);
   const dinnerEntries = useMemo(() => dayEntries.filter((e) => e.mealType === 'dinner'), [dayEntries]);
   const snackEntries = useMemo(() => dayEntries.filter((e) => e.mealType === 'snack'), [dayEntries]);
 
-  const totalDayCalories = dayEntries.reduce((sum, e) => sum + (Number(e.calories) || 0), 0);
-  const totalDayProtein = dayEntries.reduce((sum, e) => sum + (Number(e.protein) || 0), 0);
-  const totalDayCarbs = dayEntries.reduce((sum, e) => sum + (Number(e.carbs) || 0), 0);
-  const totalDayFats = dayEntries.reduce((sum, e) => sum + (Number(e.fats) || 0), 0);
+  const { totalDayCalories, totalDayProtein, totalDayCarbs, totalDayFats } = useMemo(() => {
+    let cals = 0;
+    let protein = 0;
+    let carbs = 0;
+    let fats = 0;
+    for (let i = 0; i < dayEntries.length; i++) {
+      const e = dayEntries[i];
+      cals += Number(e.calories) || 0;
+      protein += Number(e.protein) || 0;
+      carbs += Number(e.carbs) || 0;
+      fats += Number(e.fats) || 0;
+    }
+    return {
+      totalDayCalories: cals,
+      totalDayProtein: protein,
+      totalDayCarbs: carbs,
+      totalDayFats: fats,
+    };
+  }, [dayEntries]);
 
   // 7-day average calculation
   const weeklyAvgCalories = useMemo(() => {
@@ -237,12 +264,9 @@ export default function HistoryScreen() {
     for (let i = 0; i < 7; i++) {
       const d = new Date(startOfWeek);
       d.setDate(startOfWeek.getDate() + i);
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, '0');
-      const dayStr = String(d.getDate()).padStart(2, '0');
-      const dateStr = `${y}-${m}-${dayStr}`;
+      const dateStr = toLocalDateString(d);
 
-      const dayMeals = entries.filter((e) => e.date === dateStr);
+      const dayMeals = entriesByDate.get(dateStr) || [];
       const cals = dayMeals.reduce((sum, e) => sum + (Number(e.calories) || 0), 0);
       const protein = dayMeals.reduce((sum, e) => sum + (Number(e.protein) || 0), 0);
 
@@ -257,7 +281,7 @@ export default function HistoryScreen() {
       });
     }
     return list;
-  }, [currentDateObj, entries, goals.calories, selectedDate]);
+  }, [currentDateObj, entriesByDate, goals.calories, selectedDate]);
 
   // Month View: Grid Calculation
   const monthDaysGrid = useMemo(() => {
@@ -277,7 +301,7 @@ export default function HistoryScreen() {
       const dStr = String(day).padStart(2, '0');
       const dateStr = `${year}-${mStr}-${dStr}`;
 
-      const dayMeals = entries.filter((e) => e.date === dateStr);
+      const dayMeals = entriesByDate.get(dateStr) || [];
       const cals = dayMeals.reduce((sum, e) => sum + (Number(e.calories) || 0), 0);
 
       grid.push({
@@ -291,7 +315,7 @@ export default function HistoryScreen() {
       });
     }
     return grid;
-  }, [calendarMonth, entries, goals.calories, selectedDate]);
+  }, [calendarMonth, entriesByDate, goals.calories, selectedDate]);
 
   const isGoalMet =
     totalDayCalories >= goals.calories * 0.85 && totalDayCalories <= goals.calories * 1.15;

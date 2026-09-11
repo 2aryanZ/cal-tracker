@@ -21,6 +21,7 @@ import {
   initializeStorage,
   getFoodEntries,
   saveFoodEntry,
+  saveFoodEntriesBatch,
   updateFoodEntry,
   deleteFoodEntry,
   getMacroGoals,
@@ -33,6 +34,7 @@ import {
   hasCompletedOnboarding,
   setOnboardingCompleted,
   getTodayDateString,
+  toLocalDateString,
   getUserAccount,
   saveUserAccount,
   signInUser,
@@ -61,7 +63,7 @@ import {
 } from '@/services/storage';
 import { scheduleMealReminders, sendInstantStreakCelebration } from '@/services/notificationService';
 import {
-  supabaseSignUp,
+  supabaseSignIn,
   supabaseSignOut,
   supabaseSignInWithGoogle,
   supabaseSignInWithApple,
@@ -137,7 +139,7 @@ interface NutritionContextType {
   updateGoals: (goals: MacroTargets) => Promise<void>;
   saveProfile: (profile: UserProfile, newGoals: MacroTargets) => Promise<void>;
   updateNotifications: (settings: NotificationSettings) => Promise<void>;
-  signIn: (email: string, name?: string, password?: string) => Promise<void>;
+  signIn: (email: string, name?: string, password?: string, isSignUpMode?: boolean) => Promise<void>;
   signInWithGoogle: () => Promise<boolean>;
   signInWithApple: () => Promise<boolean>;
   signOut: () => Promise<void>;
@@ -444,56 +446,68 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
   }, [userProfile, showToast]);
 
   // Authentication Handlers
-  const signIn = useCallback(async (email: string, name?: string, password?: string) => {
-    setIsSyncing(true);
-    try {
-      // 1. Sign up/in directly with Supabase Auth
-      const res = await supabaseSignUp(email, password, name);
-      const account: UserAccount = res.user || (await signInUser(email, name));
+  const signIn = useCallback(
+    async (email: string, name?: string, password?: string) => {
+      setIsSyncing(true);
+      try {
+        const cleanEmail = email.trim().toLowerCase();
+        const displayName = name?.trim() || cleanEmail.split('@')[0] || 'User';
 
-      setUserAccount(account);
-      await saveUserAccount(account);
+        const res = await supabaseSignIn(cleanEmail, password, displayName);
+        const account: UserAccount = res.user || (await signInUser(cleanEmail, displayName));
 
-      // 2. Push current local data up to Supabase
-      const currentWeights = await getWeightLogs();
-      await supabasePushLocalData({
-        entries,
-        weights: currentWeights,
-        waterLogs,
-        goals,
-        profile: userProfile,
-      });
+        setUserAccount(account);
+        await saveUserAccount(account);
 
-      // 3. Pull all merged cloud history down
-      const cloudData = await supabaseFetchAllUserData();
-      if (cloudData) {
-        if (cloudData.foodEntries && cloudData.foodEntries.length > 0) {
-          setEntries(cloudData.foodEntries);
-          await setAllFoodEntries(cloudData.foodEntries);
-        }
-        if (cloudData.waterLogs) {
-          const mergedWater = { ...waterLogs, ...cloudData.waterLogs };
-          setWaterLogsState(mergedWater);
-          await setAllWaterLogs(mergedWater);
-        }
-        if (cloudData.goals) {
-          setGoals(cloudData.goals);
-          await saveMacroGoals(cloudData.goals);
-        }
-        if (cloudData.profile) {
-          setUserProfile(cloudData.profile);
-          await saveUserProfile(cloudData.profile);
-        }
+        // Safe background data synchronization so UI responds immediately
+        (async () => {
+          try {
+            const currentWeights = await getWeightLogs();
+            await supabasePushLocalData({
+              entries,
+              weights: currentWeights,
+              waterLogs,
+              goals,
+              profile: userProfile,
+            });
+
+            const cloudData = await supabaseFetchAllUserData();
+            if (cloudData) {
+              if (cloudData.foodEntries && cloudData.foodEntries.length > 0) {
+                setEntries(cloudData.foodEntries);
+                await setAllFoodEntries(cloudData.foodEntries);
+              }
+              if (cloudData.waterLogs && Object.keys(cloudData.waterLogs).length > 0) {
+                setWaterLogsState((prev) => ({ ...prev, ...cloudData.waterLogs }));
+                await setAllWaterLogs({ ...waterLogs, ...cloudData.waterLogs });
+              }
+              if (cloudData.goals) {
+                setGoals(cloudData.goals);
+                await saveMacroGoals(cloudData.goals);
+              }
+              if (cloudData.profile) {
+                setUserProfile(cloudData.profile);
+                await saveUserProfile(cloudData.profile);
+              }
+            }
+          } catch (syncErr) {
+            console.warn('Background sync notice:', syncErr);
+          }
+        })();
+
+        showToast('Welcome back! 👋', `Multi-device cloud sync active for ${account.name}`, 'sparkles');
+      } catch (err) {
+        console.warn('Sign in fallback notice:', err);
+        const account = await signInUser(email, name);
+        setUserAccount(account);
+        await saveUserAccount(account);
+        showToast('Welcome! 👋', `Signed in as ${account.name}`, 'sparkles');
+      } finally {
+        setIsSyncing(false);
       }
-
-      showToast('Welcome back! 👋', `Multi-device cloud sync active for ${account.name}`, 'sparkles');
-    } catch (err) {
-      console.error('Sign in error:', err);
-      showToast('Sign In Notice', 'Signed in locally. Cloud sync will retry.', 'sparkles');
-    } finally {
-      setIsSyncing(false);
-    }
-  }, [entries, waterLogs, goals, userProfile, showToast]);
+    },
+    [entries, waterLogs, goals, userProfile, showToast]
+  );
 
   const signInWithGoogle = useCallback(async (): Promise<boolean> => {
     setIsSyncing(true);
@@ -509,36 +523,41 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
         setUserAccount(res.user);
         await saveUserAccount(res.user);
 
-        // Push local and pull cloud data
-        const currentWeights = await getWeightLogs();
-        await supabasePushLocalData({
-          entries,
-          weights: currentWeights,
-          waterLogs,
-          goals,
-          profile: userProfile,
-        });
+        // Safe background cloud sync
+        (async () => {
+          try {
+            const currentWeights = await getWeightLogs();
+            await supabasePushLocalData({
+              entries,
+              weights: currentWeights,
+              waterLogs,
+              goals,
+              profile: userProfile,
+            });
 
-        const cloudData = await supabaseFetchAllUserData();
-        if (cloudData) {
-          if (cloudData.foodEntries && cloudData.foodEntries.length > 0) {
-            setEntries(cloudData.foodEntries);
-            await setAllFoodEntries(cloudData.foodEntries);
+            const cloudData = await supabaseFetchAllUserData();
+            if (cloudData) {
+              if (cloudData.foodEntries && cloudData.foodEntries.length > 0) {
+                setEntries(cloudData.foodEntries);
+                await setAllFoodEntries(cloudData.foodEntries);
+              }
+              if (cloudData.waterLogs && Object.keys(cloudData.waterLogs).length > 0) {
+                setWaterLogsState((prev) => ({ ...prev, ...cloudData.waterLogs }));
+                await setAllWaterLogs({ ...waterLogs, ...cloudData.waterLogs });
+              }
+              if (cloudData.goals) {
+                setGoals(cloudData.goals);
+                await saveMacroGoals(cloudData.goals);
+              }
+              if (cloudData.profile) {
+                setUserProfile(cloudData.profile);
+                await saveUserProfile(cloudData.profile);
+              }
+            }
+          } catch (syncErr) {
+            console.warn('Background sync notice:', syncErr);
           }
-          if (cloudData.waterLogs) {
-            const mergedWater = { ...waterLogs, ...cloudData.waterLogs };
-            setWaterLogsState(mergedWater);
-            await setAllWaterLogs(mergedWater);
-          }
-          if (cloudData.goals) {
-            setGoals(cloudData.goals);
-            await saveMacroGoals(cloudData.goals);
-          }
-          if (cloudData.profile) {
-            setUserProfile(cloudData.profile);
-            await saveUserProfile(cloudData.profile);
-          }
-        }
+        })();
 
         showToast('Welcome back! 👋', `Signed in with Google as ${res.user.name}`, 'sparkles');
         return true;
@@ -927,7 +946,7 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
   const repeatYesterdayMeal = useCallback(async (mealType: MealType): Promise<number> => {
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    const yesterdayStr = toLocalDateString(yesterday);
 
     const yesterdayMeals = entries.filter((e) => e.date === yesterdayStr && e.mealType === mealType);
     if (yesterdayMeals.length === 0) {
@@ -935,29 +954,39 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
       return 0;
     }
 
-    triggerSuccessFeedback();
-    for (const item of yesterdayMeals) {
-      await logMeal({
-        name: item.name,
-        calories: item.calories,
-        protein: item.protein,
-        carbs: item.carbs,
-        fats: item.fats,
-        mealType: item.mealType,
-        portionSize: item.portionSize,
-        imageUri: item.imageUri,
-        date: selectedDate || getTodayDateString(),
-        isAiGenerated: false,
-      });
+    const targetDate = selectedDate || getTodayDateString();
+    const newEntries: FoodEntry[] = yesterdayMeals.map((item) => ({
+      id: `entry_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      name: item.name,
+      calories: item.calories,
+      protein: item.protein,
+      carbs: item.carbs,
+      fats: item.fats,
+      mealType: item.mealType,
+      portionSize: item.portionSize,
+      imageUri: item.imageUri,
+      date: targetDate,
+      timestamp: new Date().toISOString(),
+      isAiGenerated: false,
+    }));
+
+    const { entries: updatedEntries, stats: updatedStats } = await saveFoodEntriesBatch(newEntries);
+    setEntries(updatedEntries);
+    setStats(updatedStats);
+
+    // Non-blocking sync to Supabase in background
+    for (const entry of newEntries) {
+      supabaseSyncFoodEntry(entry);
     }
 
+    triggerSuccessFeedback();
     showToast(
       `Repeated Yesterday's ${mealType.toUpperCase()} ⚡`,
       `Logged ${yesterdayMeals.length} meal(s) into today's ${mealType}.`,
       'sparkles'
     );
     return yesterdayMeals.length;
-  }, [entries, selectedDate, logMeal, showToast]);
+  }, [entries, selectedDate, showToast]);
 
   const dismissReward = useCallback(() => {
     setRewardState((prev) => ({ ...prev, visible: false }));

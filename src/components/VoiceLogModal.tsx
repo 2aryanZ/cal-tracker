@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -39,14 +39,27 @@ function VoiceLogModalContent({
   const [isParsing, setIsParsing] = useState(false);
   const [activeMealType, setActiveMealType] = useState<MealType>(defaultMealType);
   const [parsedResult, setParsedResult] = useState<AiFoodDetectionResult | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
+    };
+  }, []);
 
   const handleStartListening = () => {
     triggerLightImpact();
     setIsListening(true);
     setParsedResult(null);
 
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+    }
+
     // Simulate realistic speech recognition listening
-    setTimeout(() => {
+    timerRef.current = setTimeout(() => {
       const sample = SAMPLE_VOICE_PROMPTS[Math.floor(Math.random() * SAMPLE_VOICE_PROMPTS.length)];
       setTranscript(sample);
       setIsListening(false);

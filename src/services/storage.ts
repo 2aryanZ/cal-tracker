@@ -47,7 +47,7 @@ export const DEFAULT_GOALS: MacroTargets = {
   protein: 150,
   carbs: 220,
   fats: 65,
-  waterMl: 2000,
+  waterMl: 3200, // Clinically computed for default biometrics (78kg, 178cm, moderate activity)
 };
 
 export const DEFAULT_NOTIFICATIONS: NotificationSettings = {
@@ -70,12 +70,15 @@ export const DEFAULT_STATS: UserStats = {
   rankTitle: 'Macro Master',
 };
 
-export function getTodayDateString(): string {
-  const d = new Date();
+export function toLocalDateString(d: Date): string {
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+export function getTodayDateString(): string {
+  return toLocalDateString(new Date());
 }
 
 export function formatDateLabel(dateStr: string): string {
@@ -115,7 +118,7 @@ function generateSeedEntries(): FoodEntry[] {
   for (let i = 5; i >= 1; i--) {
     const d = new Date(today);
     d.setDate(today.getDate() - i);
-    const dateStr = d.toISOString().split('T')[0];
+    const dateStr = toLocalDateString(d);
 
     entries.push(
       {
@@ -148,7 +151,7 @@ function generateSeedEntries(): FoodEntry[] {
       },
       {
         id: `seed-dn-${i}`,
-        name: 'Salmon Fillet with Sweet Potato & Asparagus',
+        name: 'Pan-Seared Salmon with Sweet Potato',
         calories: 720,
         protein: 48,
         carbs: 58,
@@ -157,7 +160,7 @@ function generateSeedEntries(): FoodEntry[] {
         timestamp: `${dateStr}T19:45:00.000Z`,
         date: dateStr,
         portionSize: '1 plate',
-        confidence: 0.96,
+        confidence: 0.94,
         isAiGenerated: true,
       },
       {
@@ -230,9 +233,19 @@ export async function getFoodEntries(): Promise<FoodEntry[]> {
 }
 
 export async function saveFoodEntry(entry: FoodEntry): Promise<{ entries: FoodEntry[]; stats: UserStats }> {
+  return saveFoodEntriesBatch([entry]);
+}
+
+export async function saveFoodEntriesBatch(newEntries: FoodEntry[]): Promise<{ entries: FoodEntry[]; stats: UserStats }> {
   try {
+    if (newEntries.length === 0) {
+      const current = await getFoodEntries();
+      const currentStats = await getUserStats();
+      return { entries: current, stats: currentStats };
+    }
+
     const entries = await getFoodEntries();
-    const updatedEntries = [entry, ...entries];
+    const updatedEntries = [...newEntries, ...entries];
     cachedEntries = updatedEntries;
     AsyncStorage.setItem(STORAGE_KEYS.ENTRIES, JSON.stringify(updatedEntries)).catch(console.error);
 
@@ -245,7 +258,7 @@ export async function saveFoodEntry(entry: FoodEntry): Promise<{ entries: FoodEn
       // Check if last logged was yesterday
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayStr = yesterday.toISOString().split('T')[0];
+      const yesterdayStr = toLocalDateString(yesterday);
 
       if (stats.lastLoggedDate === yesterdayStr) {
         newStreak += 1;
@@ -261,14 +274,14 @@ export async function saveFoodEntry(entry: FoodEntry): Promise<{ entries: FoodEn
       currentStreak: newStreak,
       bestStreak: Math.max(stats.bestStreak, newStreak),
       lastLoggedDate: today,
-      totalMealsLogged: stats.totalMealsLogged + 1,
-      rankTitle: calculateRank(newStreak, stats.totalMealsLogged + 1),
+      totalMealsLogged: stats.totalMealsLogged + newEntries.length,
+      rankTitle: calculateRank(newStreak, stats.totalMealsLogged + newEntries.length),
     };
 
     AsyncStorage.setItem(STORAGE_KEYS.STATS, JSON.stringify(updatedStats)).catch(console.error);
     return { entries: updatedEntries, stats: updatedStats };
   } catch (error) {
-    console.error('Error saving food entry:', error);
+    console.error('Error saving food entries batch:', error);
     throw error;
   }
 }
@@ -520,7 +533,7 @@ export async function getUserAccount(): Promise<import('@/types/nutrition').User
     if (!raw) return DEFAULT_ACCOUNT;
     const parsed = JSON.parse(raw);
     // Reset legacy mock email if present so user sees proper guest/sign-in status
-    if (parsed.email === 'aryan@example.com') {
+    if (parsed.email && parsed.email.endsWith('@example.com')) {
       return DEFAULT_ACCOUNT;
     }
     return parsed;

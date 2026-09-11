@@ -278,18 +278,25 @@ export default function AnalyticsScreen() {
             <View style={styles.streakIconBox}>
               <Flame size={20} color={PALETTE[700]} fill={PALETTE[700]} />
             </View>
-            <Text style={styles.streakCountNumber}>{stats.currentStreak || 21}</Text>
+            <Text style={styles.streakCountNumber}>{stats.currentStreak}</Text>
             <Text style={styles.streakTextLabel}>Day Streak</Text>
 
             <View style={styles.streakDaysRow}>
-              {streakDays.map((d, i) => (
-                <View key={i} style={styles.streakDayCol}>
-                  <Text style={styles.streakDayLetter}>{d}</Text>
-                  <View style={[styles.streakCheckCircle, i <= 4 && styles.streakCheckCircleActive]}>
-                    {i <= 4 && <Check size={7} color={PALETTE[50]} strokeWidth={3} />}
+              {streakDays.map((d, i) => {
+                const todayDayIndex = new Date().getDay();
+                const isDayActive =
+                  (stats.currentStreak || 0) >= 7 ||
+                  (i <= todayDayIndex && (todayDayIndex - i) < (stats.currentStreak || 0));
+
+                return (
+                  <View key={i} style={styles.streakDayCol}>
+                    <Text style={styles.streakDayLetter}>{d}</Text>
+                    <View style={[styles.streakCheckCircle, isDayActive && styles.streakCheckCircleActive]}>
+                      {isDayActive && <Check size={7} color={PALETTE[50]} strokeWidth={3} />}
+                    </View>
                   </View>
-                </View>
-              ))}
+                );
+              })}
             </View>
           </View>
         </View>

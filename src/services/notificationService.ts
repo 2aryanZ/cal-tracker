@@ -64,7 +64,9 @@ export async function scheduleMealReminders(settings: NotificationSettings): Pro
 
     // 1. Breakfast Motivational Reminder
     if (settings.breakfastReminder && settings.breakfastTime) {
-      const [hour, minute] = settings.breakfastTime.split(':').map(Number);
+      const [parsedHour, parsedMinute] = settings.breakfastTime.split(':').map(Number);
+      const hour = Number.isFinite(parsedHour) ? parsedHour : 8;
+      const minute = Number.isFinite(parsedMinute) ? parsedMinute : 30;
       await Notifications.scheduleNotificationAsync({
         content: {
           title: '⚠️ You have not done this: Breakfast!',
@@ -74,15 +76,17 @@ export async function scheduleMealReminders(settings: NotificationSettings): Pro
         },
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes?.DAILY || 'daily',
-          hour: hour || 8,
-          minute: minute || 30,
+          hour,
+          minute,
         },
       });
     }
 
     // 2. Midday Motivational Boost
     if (settings.lunchReminder && settings.lunchTime) {
-      const [hour, minute] = settings.lunchTime.split(':').map(Number);
+      const [parsedHour, parsedMinute] = settings.lunchTime.split(':').map(Number);
+      const hour = Number.isFinite(parsedHour) ? parsedHour : 13;
+      const minute = Number.isFinite(parsedMinute) ? parsedMinute : 0;
       await Notifications.scheduleNotificationAsync({
         content: {
           title: '💪 You can do this!',
@@ -92,15 +96,17 @@ export async function scheduleMealReminders(settings: NotificationSettings): Pro
         },
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes?.DAILY || 'daily',
-          hour: hour || 13,
-          minute: minute || 0,
+          hour,
+          minute,
         },
       });
     }
 
     // 3. Evening Pending Meal Reminder
     if (settings.dinnerReminder && settings.dinnerTime) {
-      const [hour, minute] = settings.dinnerTime.split(':').map(Number);
+      const [parsedHour, parsedMinute] = settings.dinnerTime.split(':').map(Number);
+      const hour = Number.isFinite(parsedHour) ? parsedHour : 19;
+      const minute = Number.isFinite(parsedMinute) ? parsedMinute : 30;
       await Notifications.scheduleNotificationAsync({
         content: {
           title: '🍽️ This is also not done: Dinner is pending!',
@@ -110,15 +116,17 @@ export async function scheduleMealReminders(settings: NotificationSettings): Pro
         },
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes?.DAILY || 'daily',
-          hour: hour || 19,
-          minute: minute || 30,
+          hour,
+          minute,
         },
       });
     }
 
     // 4. Night Streak & Goal Completion Push
     if (settings.streakReminder && settings.streakTime) {
-      const [hour, minute] = settings.streakTime.split(':').map(Number);
+      const [parsedHour, parsedMinute] = settings.streakTime.split(':').map(Number);
+      const hour = Number.isFinite(parsedHour) ? parsedHour : 21;
+      const minute = Number.isFinite(parsedMinute) ? parsedMinute : 30;
       await Notifications.scheduleNotificationAsync({
         content: {
           title: '🔥 You can do this: Close your daily goals!',
@@ -128,8 +136,8 @@ export async function scheduleMealReminders(settings: NotificationSettings): Pro
         },
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes?.DAILY || 'daily',
-          hour: hour || 21,
-          minute: minute || 30,
+          hour,
+          minute,
         },
       });
     }

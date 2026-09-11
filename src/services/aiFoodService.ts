@@ -266,7 +266,7 @@ export async function analyzeFoodImage(
   const validKey = (apiKey && apiKey.trim().length > 10) ? apiKey.trim() : (process.env.EXPO_PUBLIC_GEMINI_API_KEY || '');
 
   if (validKey && resolvedBase64) {
-    const modelCandidates = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-3.6-flash'];
+    const modelCandidates = ['gemini-3.5-flash', 'gemini-3.6-flash'];
 
     for (const model of modelCandidates) {
       try {
@@ -389,7 +389,7 @@ export async function analyzeNutritionLabelImage(
   const validKey = (apiKey && apiKey.trim().length > 10) ? apiKey.trim() : (process.env.EXPO_PUBLIC_GEMINI_API_KEY || '');
 
   if (validKey && resolvedBase64) {
-    const modelCandidates = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-3.6-flash'];
+    const modelCandidates = ['gemini-3.5-flash', 'gemini-3.6-flash'];
 
     for (const model of modelCandidates) {
       try {

@@ -128,13 +128,14 @@ export default function ScanScreen() {
 
         if (photo?.uri) {
           await processImage(photo.uri, photo.base64);
-          return;
         }
       } catch (err) {
         console.warn('Camera takePicture error:', err);
+        Alert.alert('Camera Error', 'Could not capture photo. Please try again.');
       } finally {
         setIsScanning(false);
       }
+      return;
     }
 
     // Explicitly request camera permission first
@@ -161,7 +162,7 @@ export default function ScanScreen() {
 
     try {
       const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: true,
         quality: 0.85,
         base64: true,
@@ -187,7 +188,7 @@ export default function ScanScreen() {
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: true,
         aspect: [4, 3],
         quality: 0.85,

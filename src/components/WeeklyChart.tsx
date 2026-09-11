@@ -1,6 +1,8 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { FoodEntry } from '@/types/nutrition';
+import { toLocalDateString } from '@/services/storage';
+import { PALETTE, FONTS } from '@/constants/theme';
 
 interface WeeklyChartProps {
   entries: FoodEntry[];
@@ -9,12 +11,22 @@ interface WeeklyChartProps {
   onSelectDate: (date: string) => void;
 }
 
-export function WeeklyChart({
+export const WeeklyChart = React.memo(function WeeklyChart({
   entries,
   targetCalories,
   selectedDate,
   onSelectDate,
 }: WeeklyChartProps) {
+  // Pre-index entries by date for O(1) lookups
+  const entriesByDate = React.useMemo(() => {
+    const map = new Map<string, number>();
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i];
+      map.set(e.date, (map.get(e.date) || 0) + (Number(e.calories) || 0));
+    }
+    return map;
+  }, [entries]);
+
   // Generate last 7 days including today
   const days = React.useMemo(() => {
     const list = [];
@@ -23,12 +35,11 @@ export function WeeklyChart({
     for (let i = 6; i >= 0; i--) {
       const d = new Date(today);
       d.setDate(today.getDate() - i);
-      const dateStr = d.toISOString().split('T')[0];
+      const dateStr = toLocalDateString(d);
       const dayLabel = d.toLocaleDateString('en-US', { weekday: 'narrow' });
       const dayNum = d.getDate();
 
-      const dayEntries = entries.filter((e) => e.date === dateStr);
-      const totalCal = dayEntries.reduce((sum, e) => sum + (Number(e.calories) || 0), 0);
+      const totalCal = entriesByDate.get(dateStr) || 0;
 
       list.push({
         dateStr,
@@ -40,7 +51,7 @@ export function WeeklyChart({
     }
 
     return list;
-  }, [entries]);
+  }, [entriesByDate]);
 
   const maxCal = Math.max(...days.map((d) => d.totalCal), targetCalories, 2400);
 
@@ -58,10 +69,10 @@ export function WeeklyChart({
           const isOver = day.totalCal > targetCalories;
           const isTargetMet = day.totalCal >= targetCalories * 0.85 && !isOver;
 
-          let barColor = '#38BDF8';
+          let barColor = PALETTE[700];
           if (isOver) barColor = '#F59E0B';
           else if (isTargetMet) barColor = '#10B981';
-          else if (day.totalCal === 0) barColor = '#334155';
+          else if (day.totalCal === 0) barColor = PALETTE[200];
 
           return (
             <TouchableOpacity
@@ -111,16 +122,21 @@ export function WeeklyChart({
       </View>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#131B2E',
+    backgroundColor: PALETTE.white,
     borderRadius: 20,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#1E293B',
+    borderColor: PALETTE[100],
     marginBottom: 16,
+    shadowColor: PALETTE[950],
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
   header: {
     flexDirection: 'row',
@@ -129,20 +145,22 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   title: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#FFFFFF',
+    fontFamily: FONTS.serif,
+    fontSize: 15,
+    fontWeight: '700',
+    color: PALETTE[950],
   },
   goalPill: {
+    fontFamily: FONTS.sans,
     fontSize: 11,
     fontWeight: '700',
-    color: '#94A3B8',
-    backgroundColor: '#090D16',
+    color: PALETTE[700],
+    backgroundColor: PALETTE[50],
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#1E293B',
+    borderColor: PALETTE[100],
   },
   chartArea: {
     flexDirection: 'row',
@@ -158,29 +176,30 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   barValue: {
+    fontFamily: FONTS.sans,
     fontSize: 10,
-    fontWeight: '700',
-    color: '#64748B',
+    fontWeight: '600',
+    color: PALETTE[400],
     marginBottom: 6,
   },
   barValueSelected: {
-    color: '#38BDF8',
-    fontWeight: '900',
+    color: PALETTE[950],
+    fontWeight: '800',
   },
   barTrack: {
     width: 24,
     height: 90,
-    backgroundColor: '#090D16',
+    backgroundColor: PALETTE[50],
     borderRadius: 8,
     overflow: 'hidden',
     justifyContent: 'flex-end',
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: '#1E293B',
+    borderColor: PALETTE[100],
   },
   barTrackSelected: {
     borderWidth: 1.5,
-    borderColor: '#38BDF8',
+    borderColor: PALETTE[950],
   },
   barFill: {
     width: '100%',
@@ -193,27 +212,30 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   dayLabelPillActive: {
-    backgroundColor: '#0C4A6E',
+    backgroundColor: PALETTE[100],
   },
   dayLabelText: {
+    fontFamily: FONTS.sans,
     fontSize: 11,
     fontWeight: '600',
-    color: '#94A3B8',
+    color: PALETTE[600],
   },
   dayLabelTextActive: {
-    color: '#38BDF8',
+    color: PALETTE[950],
     fontWeight: '800',
   },
   dayLabelTextToday: {
-    color: '#10B981',
+    color: '#059669',
+    fontWeight: '800',
   },
   dayNumText: {
+    fontFamily: FONTS.sans,
     fontSize: 9,
     fontWeight: '500',
-    color: '#64748B',
+    color: PALETTE[400],
   },
   dayNumTextActive: {
-    color: '#E2E8F0',
+    color: PALETTE[950],
     fontWeight: '700',
   },
 });

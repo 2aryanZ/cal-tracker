@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -38,6 +38,7 @@ import { MacroTargets, NotificationSettings, DietaryPreference } from '@/types/n
 import { AuthModal } from '@/components/AuthModal';
 import { PALETTE, FONTS } from '@/constants/theme';
 import { triggerLightImpact } from '@/services/hapticsService';
+import { calculatePersonalizedWaterIntake } from '@/services/tdeeCalculator';
 
 const DIET_PRESETS: { name: string; desc: string; goals: MacroTargets; pref: DietaryPreference }[] = [
   {
@@ -88,15 +89,37 @@ export default function SettingsScreen() {
   } = useNutrition();
 
 
-  // Targets state
-  const [calories, setCalories] = useState(String(goals.calories));
-  const [protein, setProtein] = useState(String(goals.protein));
-  const [carbs, setCarbs] = useState(String(goals.carbs));
-  const [fats, setFats] = useState(String(goals.fats));
-  const [waterTargetInput, setWaterTargetInput] = useState(String(goals.waterMl || 2000));
+  // Evidence-based personalized hydration calculated from biometrics
+  const recommendedHydration = useMemo(() => {
+    return calculatePersonalizedWaterIntake(
+      userProfile?.weightKg || 78,
+      userProfile?.heightCm || 178,
+      userProfile?.gender || 'male',
+      userProfile?.activityLevel || 'moderate',
+      userProfile?.goal || 'fat_loss'
+    );
+  }, [userProfile]);
 
-  // Notification state
-  const [notifs, setNotifs] = useState<NotificationSettings>(notificationSettings);
+  // Targets & Notifications local override state
+  const [userEditedGoals, setUserEditedGoals] = useState<Partial<MacroTargets> | null>(null);
+  const [userEditedNotifs, setUserEditedNotifs] = useState<NotificationSettings | null>(null);
+
+  const calories = userEditedGoals?.calories !== undefined ? String(userEditedGoals.calories) : String(goals.calories);
+  const protein = userEditedGoals?.protein !== undefined ? String(userEditedGoals.protein) : String(goals.protein);
+  const carbs = userEditedGoals?.carbs !== undefined ? String(userEditedGoals.carbs) : String(goals.carbs);
+  const fats = userEditedGoals?.fats !== undefined ? String(userEditedGoals.fats) : String(goals.fats);
+  const waterTargetInput = userEditedGoals?.waterMl !== undefined ? String(userEditedGoals.waterMl) : String(goals.waterMl || recommendedHydration.dailyWaterMl);
+
+  const notifs = userEditedNotifs ?? notificationSettings;
+
+  const setCalories = (val: string) => setUserEditedGoals((prev) => ({ ...(prev || goals), calories: Number(val) || 0 }));
+  const setProtein = (val: string) => setUserEditedGoals((prev) => ({ ...(prev || goals), protein: Number(val) || 0 }));
+  const setCarbs = (val: string) => setUserEditedGoals((prev) => ({ ...(prev || goals), carbs: Number(val) || 0 }));
+  const setFats = (val: string) => setUserEditedGoals((prev) => ({ ...(prev || goals), fats: Number(val) || 0 }));
+  const setWaterTargetInput = (val: string) => setUserEditedGoals((prev) => ({ ...(prev || goals), waterMl: Number(val) || 0 }));
+  const setNotifs = (val: NotificationSettings | ((prev: NotificationSettings) => NotificationSettings)) => {
+    setUserEditedNotifs(typeof val === 'function' ? val(notifs) : val);
+  };
 
   // Gemini API Key state
   const [apiKey, setApiKey] = useState('');
@@ -109,11 +132,7 @@ export default function SettingsScreen() {
   }, []);
 
   const handleApplyPreset = (preset: typeof DIET_PRESETS[0]) => {
-    setCalories(String(preset.goals.calories));
-    setProtein(String(preset.goals.protein));
-    setCarbs(String(preset.goals.carbs));
-    setFats(String(preset.goals.fats));
-    setWaterTargetInput(String(preset.goals.waterMl || 2000));
+    setUserEditedGoals(preset.goals);
     showToast('Preset Loaded', `${preset.name} (${preset.goals.calories} kcal • ${((preset.goals.waterMl || 2000) / 1000).toFixed(1)}L Water)`, 'sparkles');
   };
 
@@ -387,6 +406,25 @@ export default function SettingsScreen() {
               <Text style={styles.unitText}>ml ({(Number(waterTargetInput || 0) / 1000).toFixed(1)}L)</Text>
             </View>
           </View>
+
+          <View style={styles.waterHelpContainer}>
+            <Text style={styles.waterHelpText}>
+              Recommended: {recommendedHydration.dailyWaterMl} ml (~{recommendedHydration.recommendedGlasses} glasses / day)
+            </Text>
+            {Number(waterTargetInput) !== recommendedHydration.dailyWaterMl && (
+              <TouchableOpacity
+                onPress={() => {
+                  triggerLightImpact();
+                  setWaterTargetInput(String(recommendedHydration.dailyWaterMl));
+                }}
+                style={styles.waterResetBtn}
+                activeOpacity={0.8}>
+                <Text style={styles.waterResetBtnText}>
+                  Use Recommended ({recommendedHydration.dailyWaterMl} ml)
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
 
         {/* Dietary Preferences & Lifestyle Card */}
@@ -608,7 +646,7 @@ export default function SettingsScreen() {
       <AuthModal
         visible={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
-        onSignIn={async (email, name, password) => {
+        onSignIn={async (email: string, name?: string, password?: string) => {
           await signIn(email, name, password);
         }}
       />
@@ -1104,5 +1142,33 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: PALETTE[50],
+  },
+  waterHelpContainer: {
+    backgroundColor: '#F0F9FF',
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+  },
+  waterHelpText: {
+    fontFamily: FONTS.sans,
+    fontSize: 11.5,
+    color: '#0369A1',
+    lineHeight: 16,
+  },
+  waterResetBtn: {
+    alignSelf: 'flex-start',
+    marginTop: 6,
+    backgroundColor: '#0284C7',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  waterResetBtnText: {
+    fontFamily: FONTS.sans,
+    fontSize: 11,
+    fontWeight: '700',
+    color: PALETTE.white,
   },
 });

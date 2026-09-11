@@ -10,14 +10,28 @@ import { Platform } from 'react-native';
 const SUCCESS_CHIME_URI =
   'https://assets.mixkit.co/active_storage/sfx/2019/2019-preview.mp3'; // Uplifting positive success chime
 
+// Singleton Web Audio API Context to eliminate memory leaks & browser context limits
+let sharedAudioCtx: any = null;
+
+function getSharedAudioContext(): any {
+  if (typeof window === 'undefined') return null;
+  const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+  if (!AudioCtx) return null;
+  if (!sharedAudioCtx) {
+    sharedAudioCtx = new AudioCtx();
+  }
+  if (sharedAudioCtx.state === 'suspended') {
+    sharedAudioCtx.resume().catch(() => {});
+  }
+  return sharedAudioCtx;
+}
+
 export async function playGoalChime(): Promise<void> {
   try {
     if (Platform.OS === 'web') {
-      // High-precision Web Audio API synth chime (C5 -> E5 -> G5 chord)
-      if (typeof window !== 'undefined' && (window.AudioContext || (window as any).webkitAudioContext)) {
-        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-        const ctx = new AudioCtx();
-        
+      // High-precision Web Audio API synth chime (C5 -> E5 -> G5 -> C6 chord)
+      const ctx = getSharedAudioContext();
+      if (ctx) {
         const now = ctx.currentTime;
         const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
         

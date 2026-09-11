@@ -29,7 +29,7 @@ export async function parseVoiceMealTranscript(
 
   // 1. Try Gemini Multimodal / Text Flash API
   if (validKey) {
-    const models = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+    const models = ['gemini-3.5-flash', 'gemini-3.6-flash'];
     for (const model of models) {
       try {
         const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${validKey}`;
