@@ -1,13 +1,18 @@
-import { Stack } from 'expo-router';
+import React,{useEffect} from 'react';
+import {SafeAreaProvider} from 'react-native-safe-area-context';
+import {subscribeToReminderTaps} from '@/services/notificationService';
+import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View, StyleSheet, Platform } from 'react-native';
 import { NutritionProvider, useNutrition } from '@/context/NutritionContext';
 import { RewardCelebration } from '@/components/RewardCelebration';
 import { NotificationToast } from '@/components/NotificationToast';
 import { OnboardingModal } from '@/components/OnboardingModal';
-import { PALETTE } from '@/constants/theme';
+import { PALETTE, JOURNAL } from '@/constants/theme';
 
 function RootNavigationLayout() {
+  const router=useRouter();
+  useEffect(()=>subscribeToReminderTaps(data=>{if(data.screen==='scan')router.push({pathname:'/(tabs)/scan',params:{mode:'food',mealType:String(data.mealType??'lunch')}});else router.push('/(tabs)');}),[router]);
   const {
     rewardState,
     dismissReward,
@@ -27,7 +32,7 @@ function RootNavigationLayout() {
           screenOptions={{
             headerShown: false,
             contentStyle: { backgroundColor: PALETTE[50] },
-            animation: 'fade_from_bottom',
+            animation: 'none',
           }}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen
@@ -57,9 +62,7 @@ function RootNavigationLayout() {
           visible={onboardingVisible}
           onClose={() => setOnboardingVisible(false)}
           initialProfile={userProfile}
-          onComplete={(profile, targets) => {
-            saveProfile(profile, targets);
-          }}
+          onComplete={saveProfile}
         />
       </View>
     </View>
@@ -68,16 +71,16 @@ function RootNavigationLayout() {
 
 export default function RootLayout() {
   return (
-    <NutritionProvider>
+    <SafeAreaProvider><NutritionProvider>
       <RootNavigationLayout />
-    </NutritionProvider>
+    </NutritionProvider></SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
   outerCanvas: {
     flex: 1,
-    backgroundColor: '#EAEFEF', // Soft neutral canvas on wide desktop
+    backgroundColor: JOURNAL.canvas, // Soft neutral canvas on wide desktop
     alignItems: 'center',
     justifyContent: 'center',
   },

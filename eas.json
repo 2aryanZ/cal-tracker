@@ -23,18 +23,5 @@
         "buildType": "app-bundle"
       }
     }
-  },
-  "submit": {
-    "production": {
-      "ios": {
-        "appleId": "[YOUR EMAIL]",
-        "ascAppId": "YOUR_APP_STORE_CONNECT_APP_ID",
-        "appleTeamId": "YOUR_APPLE_TEAM_ID"
-      },
-      "android": {
-        "serviceAccountKeyPath": "./google-services-key.json",
-        "track": "production"
-      }
-    }
   }
 }

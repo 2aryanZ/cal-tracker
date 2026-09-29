@@ -1,7 +1,27 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, ReactNode } from 'react';
-import * as Haptics from 'expo-haptics';
-import { Platform } from 'react-native';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  useRef,
+  ReactNode,
+} from 'react';
 import {
+  AppState,
+  ActivityIndicator,
+  View,
+  Text,
+  TouchableOpacity,
+} from 'react-native';
+import { JOURNAL } from '@/constants/theme';
+import {
+  recentJournalMeals,
+  recordedWeightsThrough,
+  isScannedMeal,
+} from '@/services/journalRules';
+import type {
   FoodEntry,
   MacroTargets,
   UserStats,
@@ -17,69 +37,31 @@ import {
   HealthSyncSettings,
   MilestoneBadge,
 } from '@/types/nutrition';
+import * as storage from '@/services/storage';
 import {
-  initializeStorage,
-  getFoodEntries,
-  saveFoodEntry,
-  saveFoodEntriesBatch,
-  updateFoodEntry,
-  deleteFoodEntry,
-  getMacroGoals,
-  saveMacroGoals,
-  getUserStats,
-  getNotificationSettings,
-  saveNotificationSettings,
-  getUserProfile,
-  saveUserProfile,
-  hasCompletedOnboarding,
-  setOnboardingCompleted,
-  getTodayDateString,
-  toLocalDateString,
-  getUserAccount,
-  saveUserAccount,
-  signInUser,
-  signOutUser,
-  getWaterLogs,
-  saveWaterForDate,
-  setAllWaterLogs,
-  setAllFoodEntries,
-  getWeightLogs,
-  addWeightLog,
-  deleteWeightLog,
-  getFavoriteMeals,
-  saveFavoriteMeal,
-  removeFavoriteMeal,
-  getDietaryPreference,
-  saveDietaryPreference,
-  getHealthSyncSettings,
-  saveHealthSyncSettings,
-  DEFAULT_GOALS,
-  DEFAULT_STATS,
-  DEFAULT_NOTIFICATIONS,
-  DEFAULT_PROFILE,
-  DEFAULT_ACCOUNT,
-  DEFAULT_DIETARY_PREFERENCE,
-  DEFAULT_HEALTH_SYNC,
-} from '@/services/storage';
-import { scheduleMealReminders, sendInstantStreakCelebration } from '@/services/notificationService';
-import {
+  supabase,
+  accountFromAuthUser,
   supabaseSignIn,
-  supabaseSignOut,
+  supabaseSignUp,
   supabaseSignInWithGoogle,
   supabaseSignInWithApple,
-  supabaseSyncFoodEntry,
-  supabaseDeleteFoodEntry,
-  supabaseSyncWaterLog,
-  supabaseSyncWeightLog,
-  supabaseSyncMacroTargets,
-  supabaseSyncUserProfile,
-  supabaseFetchAllUserData,
-  supabasePushLocalData,
+  supabaseSignOut,
+  syncAccount,
 } from '@/services/supabase';
-
-import { playGoalChime } from '@/services/soundService';
-import { triggerGoalCelebrationHaptic, triggerSuccessFeedback, triggerLightImpact } from '@/services/hapticsService';
-
+import {
+  calculateStats,
+  isCalorieGoalMet,
+  newId,
+  weightProgress,
+} from '@/services/nutritionRules';
+import {
+  scheduleMealReminders,
+  sendInstantStreakCelebration,
+} from '@/services/notificationService';
+import {
+  triggerSuccessFeedback,
+  triggerLightImpact,
+} from '@/services/hapticsService';
 interface RewardState {
   visible: boolean;
   streak: number;
@@ -87,7 +69,6 @@ interface RewardState {
   subtitle: string;
   caloriesAdded: number;
 }
-
 interface NutritionContextType {
   entries: FoodEntry[];
   selectedDate: string;
@@ -124,1008 +105,792 @@ interface NutritionContextType {
   toastNotification: ToastNotification | null;
   onboardingVisible: boolean;
   setOnboardingVisible: (visible: boolean) => void;
-  logMeal: (meal: Omit<FoodEntry, 'id' | 'timestamp' | 'date'> & { date?: string }) => Promise<void>;
+  logMeal: (
+    meal: Omit<FoodEntry, 'id' | 'timestamp' | 'date'> & {
+      date?: string;
+    },
+  ) => Promise<void>;
   editMeal: (entry: FoodEntry) => Promise<void>;
   removeMeal: (id: string) => Promise<void>;
   logWater: (amountMl: number, date?: string) => Promise<void>;
   setWater: (totalMl: number, date?: string) => Promise<void>;
-  addWeight: (data: { weightKg: number; weightLbs: number; date?: string; note?: string }) => Promise<void>;
+  addWeight: (data: {
+    weightKg: number;
+    weightLbs: number;
+    date?: string;
+    note?: string;
+  }) => Promise<void>;
   deleteWeight: (id: string) => Promise<void>;
-  toggleFavoriteMeal: (meal: { name: string; calories: number; protein: number; carbs: number; fats: number; mealType: any; portionSize?: string; imageUri?: string }) => Promise<boolean>;
+  toggleFavoriteMeal: (
+    meal: Omit<FavoriteMeal, 'id' | 'createdAt'>,
+  ) => Promise<boolean>;
   isFavoriteMeal: (name: string) => boolean;
   setDietaryPreference: (pref: DietaryPreference) => Promise<void>;
   updateHealthSync: (settings: Partial<HealthSyncSettings>) => Promise<void>;
-  repeatYesterdayMeal: (mealType: import('@/types/nutrition').MealType) => Promise<number>;
+  repeatYesterdayMeal: (
+    mealType: import('@/types/nutrition').MealType,
+  ) => Promise<number>;
   updateGoals: (goals: MacroTargets) => Promise<void>;
   saveProfile: (profile: UserProfile, newGoals: MacroTargets) => Promise<void>;
   updateNotifications: (settings: NotificationSettings) => Promise<void>;
-  signIn: (email: string, name?: string, password?: string, isSignUpMode?: boolean) => Promise<void>;
+  signIn: (
+    email: string,
+    name?: string,
+    password?: string,
+    isSignUpMode?: boolean,
+  ) => Promise<boolean>;
   signInWithGoogle: () => Promise<boolean>;
   signInWithApple: () => Promise<boolean>;
   signOut: () => Promise<void>;
   updateAccount: (account: Partial<UserAccount>) => Promise<void>;
   syncCloudNow: () => Promise<void>;
-
   dismissReward: () => void;
   triggerManualReward: () => void;
   showToast: (title: string, message: string, icon?: string) => void;
   dismissToast: () => void;
   refreshData: () => Promise<void>;
+  exportData: () => Promise<string>;
+  resetData: () => Promise<void>;
 }
-
-
-const NutritionContext = createContext<NutritionContextType | undefined>(undefined);
-
+const NutritionContext = createContext<NutritionContextType | undefined>(
+  undefined,
+);
 export function NutritionProvider({ children }: { children: ReactNode }) {
-  const [entries, setEntries] = useState<FoodEntry[]>([]);
-  const [selectedDate, setSelectedDate] = useState<string>(getTodayDateString());
-  const [goals, setGoals] = useState<MacroTargets>(DEFAULT_GOALS);
-  const [stats, setStats] = useState<UserStats>(DEFAULT_STATS);
-  const [userProfile, setUserProfile] = useState<UserProfile>(DEFAULT_PROFILE);
-  const [userAccount, setUserAccount] = useState<UserAccount>(DEFAULT_ACCOUNT);
-  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(DEFAULT_NOTIFICATIONS);
-  const [waterLogs, setWaterLogsState] = useState<Record<string, number>>({});
-  const [weightLogs, setWeightLogsState] = useState<WeightEntry[]>([]);
-  const [favoriteMeals, setFavoriteMealsState] = useState<FavoriteMeal[]>([]);
-  const [dietaryPreference, setDietaryPreferenceState] = useState<DietaryPreference>(DEFAULT_DIETARY_PREFERENCE);
-  const [healthSync, setHealthSyncState] = useState<HealthSyncSettings>(DEFAULT_HEALTH_SYNC);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [isSyncing, setIsSyncing] = useState<boolean>(false);
-  const [onboardingVisible, setOnboardingVisible] = useState<boolean>(false);
-  const [toastNotification, setToastNotification] = useState<ToastNotification | null>(null);
-
+  const [snapshot, setSnapshot] = useState<storage.LocalSnapshot | null>(null);
+  const [userAccount, setUserAccount] = useState(storage.DEFAULT_ACCOUNT);
+  const [selectedDate, setSelectedDate] = useState(
+    storage.getTodayDateString(),
+  );
+  const [today, setToday] = useState(storage.getTodayDateString());
+  const todayRef = useRef(today);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [onboardingVisible, setOnboardingVisible] = useState(false);
+  const [toastNotification, setToastNotification] =
+    useState<ToastNotification | null>(null);
   const [rewardState, setRewardState] = useState<RewardState>({
     visible: false,
-    streak: 1,
+    streak: 0,
     title: '',
     subtitle: '',
     caloriesAdded: 0,
   });
-
-  // Background Cloud Sync to keep data updated across devices
-  const syncCloudBackground = useCallback(async (
-    currentEntries: FoodEntry[],
-    currentGoals: MacroTargets,
-    currentProfile: UserProfile,
-    currentWaterLogs: Record<string, number>
-  ) => {
-    try {
-      const cloudData = await supabaseFetchAllUserData();
-      if (!cloudData) return;
-
-      // Merge food entries (combine unique IDs)
-      if (cloudData.foodEntries && cloudData.foodEntries.length > 0) {
-        const entryMap = new Map<string, FoodEntry>();
-        cloudData.foodEntries.forEach((e) => entryMap.set(e.id, e));
-        currentEntries.forEach((e) => {
-          if (!entryMap.has(e.id)) entryMap.set(e.id, e);
-        });
-        const mergedEntries = Array.from(entryMap.values()).sort(
-          (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-        );
-        setEntries(mergedEntries);
-        setAllFoodEntries(mergedEntries);
-      }
-
-      // Merge water logs
-      if (cloudData.waterLogs && Object.keys(cloudData.waterLogs).length > 0) {
-        const mergedWater = { ...currentWaterLogs, ...cloudData.waterLogs };
-        setWaterLogsState(mergedWater);
-        setAllWaterLogs(mergedWater);
-      }
-
-      // Merge goals & profile if present in cloud
-      if (cloudData.goals) {
-        setGoals(cloudData.goals);
-        saveMacroGoals(cloudData.goals);
-      }
-      if (cloudData.profile) {
-        setUserProfile(cloudData.profile);
-        saveUserProfile(cloudData.profile);
-      }
-    } catch (err) {
-      console.warn('Background sync notice:', err);
-    }
-  }, []);
-
-  const loadData = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      await initializeStorage();
-      const [
-        storedEntries,
-        storedGoals,
-        storedStats,
-        storedNotifs,
-        storedProfile,
-        storedAccount,
-        storedWaterLogs,
-        storedWeights,
-        storedFavorites,
-        storedPref,
-        storedHealth,
-        onboardingDone,
-      ] = await Promise.all([
-        getFoodEntries(),
-        getMacroGoals(),
-        getUserStats(),
-        getNotificationSettings(),
-        getUserProfile(),
-        getUserAccount(),
-        getWaterLogs(),
-        getWeightLogs(),
-        getFavoriteMeals(),
-        getDietaryPreference(),
-        getHealthSyncSettings(),
-        hasCompletedOnboarding(),
-      ]);
-
-      setEntries(storedEntries);
-      setGoals(storedGoals);
-      setStats(storedStats);
-      setNotificationSettings(storedNotifs);
-      setUserProfile(storedProfile);
-      setUserAccount(storedAccount);
-      setWaterLogsState(storedWaterLogs);
-      setWeightLogsState(storedWeights);
-      setFavoriteMealsState(storedFavorites);
-      setDietaryPreferenceState(storedPref);
-      setHealthSyncState(storedHealth);
-
-      if (!onboardingDone) {
-        setOnboardingVisible(true);
-      }
-
-      // Schedule notifications in background
-      scheduleMealReminders(storedNotifs);
-
-      // If user is signed in with Supabase, pull cloud updates in background
-      if (storedAccount.isLoggedIn && storedAccount.email) {
-        syncCloudBackground(storedEntries, storedGoals, storedProfile, storedWaterLogs);
-      }
-    } catch (err) {
-      console.error('Failed to load nutrition state:', err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [syncCloudBackground]);
-
-  // Initial mount data load
-  useEffect(() => {
-    let isMounted = true;
-    const init = async () => {
-      if (isMounted) {
-        await loadData();
-      }
-    };
-    init();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [loadData]);
-
-
-  // Compute water consumed for currently selected date
-  const waterMl = useMemo(() => {
-    return waterLogs[selectedDate] ?? (selectedDate === getTodayDateString() ? 1500 : 0);
-  }, [waterLogs, selectedDate]);
-
-  // Filter entries for active selected date
-  const activeDateEntries = useMemo(() => {
-    return entries.filter((e) => e.date === selectedDate);
-  }, [entries, selectedDate]);
-
-  // Compute consumed totals for selected date
-  const consumed = useMemo(() => {
-    return activeDateEntries.reduce(
-      (acc, item) => ({
-        calories: acc.calories + (Number(item.calories) || 0),
-        protein: acc.protein + (Number(item.protein) || 0),
-        carbs: acc.carbs + (Number(item.carbs) || 0),
-        fats: acc.fats + (Number(item.fats) || 0),
+  const ownerRef = useRef('guest');
+  const retryAccountRef = useRef(storage.DEFAULT_ACCOUNT);
+  const generation = useRef(0);
+  const alive = useRef(true);
+  const authTail = useRef<Promise<unknown>>(Promise.resolve());
+  const snapshotRef = useRef<storage.LocalSnapshot | null>(null);
+  const showToast = useCallback(
+    (title: string, message: string, icon?: string) =>
+      setToastNotification({
+        id: newId('toast'),
+        title,
+        message,
+        icon,
+        timestamp: Date.now(),
       }),
-      { calories: 0, protein: 0, carbs: 0, fats: 0 }
-    );
-  }, [activeDateEntries]);
-
-  // Compute remaining against daily goal
-  const remaining = useMemo(() => {
-    return {
-      calories: Math.max(goals.calories - consumed.calories, 0),
-      protein: Math.max(goals.protein - consumed.protein, 0),
-      carbs: Math.max(goals.carbs - consumed.carbs, 0),
-      fats: Math.max(goals.fats - consumed.fats, 0),
+    [],
+  );
+  const refreshLocal = useCallback(async (owner = ownerRef.current) => {
+    const value = await storage.getSnapshot();
+    if (
+      alive.current &&
+      ownerRef.current === owner &&
+      storage.getStorageScope() === owner
+    ) {
+      snapshotRef.current = value;
+      setSnapshot(value);
+    }
+    return value;
+  }, []);
+  const syncCloudNow = useCallback(async () => {
+    if (ownerRef.current === 'guest') {
+      showToast('Guest mode', 'Sign in to sync your own account.');
+      return;
+    }
+    const owner = ownerRef.current;
+    setIsSyncing(true);
+    try {
+      await syncAccount();
+      if (ownerRef.current === owner) {
+        await refreshLocal(owner);
+        showToast('Sync complete', 'Your account data is up to date.');
+      }
+    } catch (error) {
+      if (ownerRef.current === owner)
+        showToast(
+          'Changes kept on this device',
+          error instanceof Error
+            ? error.message
+            : 'Cloud sync failed. Try again.',
+        );
+    } finally {
+      if (alive.current) setIsSyncing(false);
+    }
+  }, [refreshLocal, showToast]);
+  const backgroundSync = useCallback(() => {
+    if (ownerRef.current === 'guest') return;
+    const owner = ownerRef.current;
+    void syncAccount()
+      .then(() => refreshLocal(owner))
+      .catch((error) => {
+        if (ownerRef.current === owner)
+          showToast(
+            'Cloud sync pending',
+            error instanceof Error
+              ? error.message
+              : 'Your changes are kept on this device.',
+          );
+      });
+  }, [refreshLocal, showToast]);
+  const activateAccount = useCallback(
+    (account: UserAccount): Promise<void> => {
+      const job = authTail.current.then(async () => {
+        const owner = account.isLoggedIn ? account.id : 'guest';
+        if (ownerRef.current === owner && snapshotRef.current) {
+          setUserAccount(account);
+          return;
+        }
+        retryAccountRef.current = account;
+        const token = ++generation.current;
+        setIsLoading(true);
+        setOnboardingVisible(false);
+        setRewardState((r) => ({ ...r, visible: false }));
+        setSnapshot(null);
+        snapshotRef.current = null;
+        await storage.setStorageScope(account.isLoggedIn ? account.id : null);
+        ownerRef.current = owner;
+        if (account.isLoggedIn) {
+          try {
+            await syncAccount();
+          } catch (error) {
+            showToast(
+              'Cloud sync pending',
+              error instanceof Error
+                ? error.message
+                : 'Your device data was retained.',
+            );
+          }
+        }
+        const value = await storage.getSnapshot();
+        if (!alive.current || token !== generation.current) return;
+        snapshotRef.current = value;
+        setSnapshot(value);
+        setUserAccount(account);
+        setSelectedDate(storage.getTodayDateString());
+        setOnboardingVisible(!value.onboardingDone);
+        setIsLoading(false);
+        void scheduleMealReminders(value.notifications, value.entries).catch(
+          (error) => showToast('Reminder setup failed', error.message),
+        );
+        if (account.isLoggedIn) backgroundSync();
+      });
+      authTail.current = job.catch((error) => {
+        if (alive.current) {
+          setIsLoading(false);
+          showToast(
+            'Unable to load account',
+            error instanceof Error ? error.message : 'Please try again.',
+          );
+        }
+      });
+      return job;
+    },
+    [backgroundSync, showToast],
+  );
+  useEffect(() => {
+    alive.current = true;
+    void supabase.auth
+      .getSession()
+      .then(({ data, error }) => {
+        if (error) throw error;
+        return activateAccount(
+          data.session?.user
+            ? accountFromAuthUser(data.session.user)
+            : storage.DEFAULT_ACCOUNT,
+        );
+      })
+      .catch((error) => {
+        showToast('Session unavailable', String(error.message ?? error));
+        void activateAccount(storage.DEFAULT_ACCOUNT);
+      });
+    // Supabase callbacks must return immediately rather than waiting on auth methods.
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setTimeout(() => {
+        if (alive.current)
+          void activateAccount(
+            session?.user
+              ? accountFromAuthUser(session.user)
+              : storage.DEFAULT_ACCOUNT,
+          ).catch(() => {});
+      }, 0);
+    });
+    const app = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        supabase.auth.startAutoRefresh();
+        backgroundSync();
+      } else supabase.auth.stopAutoRefresh();
+    });
+    const interval = setInterval(() => {
+      const date = storage.getTodayDateString();
+      const previous = todayRef.current;
+      if (date !== previous) {
+        todayRef.current = date;
+        setToday(date);
+        setSelectedDate((selected) =>
+          selected === previous ? date : selected,
+        );
+      }
+      backgroundSync();
+    }, 60000);
+    return () => {
+      alive.current = false;
+      subscription.unsubscribe();
+      app.remove();
+      clearInterval(interval);
+      supabase.auth.stopAutoRefresh();
     };
-  }, [goals, consumed]);
-
-  const dailySummary: DailySummary = useMemo(() => {
-    const goalMet =
-      consumed.calories >= goals.calories * 0.85 &&
-      consumed.calories <= goals.calories * 1.15;
-
-    return {
+  }, [activateAccount, backgroundSync, showToast]);
+  const entries = useMemo(() => snapshot?.entries ?? [], [snapshot]);
+  const goals = snapshot?.goals ?? storage.DEFAULT_GOALS;
+  const userProfile = snapshot?.profile ?? storage.DEFAULT_PROFILE;
+  const notificationSettings =
+    snapshot?.notifications ?? storage.DEFAULT_NOTIFICATIONS;
+  const waterLogs = snapshot?.waterLogs ?? {};
+  const weightLogs = useMemo(
+    () => snapshot?.weights ?? [],
+    [snapshot?.weights],
+  );
+  const favoriteMeals = snapshot?.favorites ?? [];
+  const dietaryPreference =
+    snapshot?.preference ?? storage.DEFAULT_DIETARY_PREFERENCE;
+  const healthSync = snapshot?.health ?? storage.DEFAULT_HEALTH_SYNC;
+  const stats = useMemo(() => calculateStats(entries, today), [entries, today]);
+  const active = useMemo(
+    () => entries.filter((e) => e.date === selectedDate),
+    [entries, selectedDate],
+  );
+  const consumed = useMemo(
+    () =>
+      active.reduce(
+        (total, e) => ({
+          calories: total.calories + e.calories,
+          protein: total.protein + e.protein,
+          carbs: total.carbs + e.carbs,
+          fats: total.fats + e.fats,
+        }),
+        { calories: 0, protein: 0, carbs: 0, fats: 0 },
+      ),
+    [active],
+  );
+  const remaining = useMemo(
+    () => ({
+      calories: goals.calories - consumed.calories,
+      protein: goals.protein - consumed.protein,
+      carbs: goals.carbs - consumed.carbs,
+      fats: goals.fats - consumed.fats,
+    }),
+    [goals, consumed],
+  );
+  const waterMl = waterLogs[selectedDate] ?? 0;
+  const dailySummary: DailySummary = useMemo(
+    () => ({
       date: selectedDate,
       totalCalories: consumed.calories,
       totalProtein: consumed.protein,
       totalCarbs: consumed.carbs,
       totalFats: consumed.fats,
-      entries: activeDateEntries,
-      goalMet,
-    };
-  }, [selectedDate, consumed, goals, activeDateEntries]);
-
-  const showToast = useCallback((title: string, message: string, icon?: string) => {
-    setToastNotification({
-      id: String(Date.now()),
-      title,
-      message,
-      icon,
-      timestamp: Date.now(),
-    });
-  }, []);
-
-  const dismissToast = useCallback(() => {
-    setToastNotification(null);
-  }, []);
-
-  // Water Tracking Handlers
-  const logWater = useCallback(async (amountMl: number, date?: string) => {
-    const targetDate = date || selectedDate;
-    const current = waterLogs[targetDate] ?? (targetDate === getTodayDateString() ? 1500 : 0);
-    const newTotal = Math.max(0, current + amountMl);
-    const updated = await saveWaterForDate(targetDate, newTotal);
-    setWaterLogsState(updated);
-
-    // Sync water log to Supabase in background
-    supabaseSyncWaterLog(targetDate, newTotal);
-
-    triggerLightImpact();
-    showToast(
-      'Water Intake Logged 💧',
-      `+${amountMl} ml logged (${(newTotal / 1000).toFixed(2)}L / ${((goals.waterMl || 2000) / 1000).toFixed(1)}L)`,
-      'droplet'
-    );
-  }, [selectedDate, waterLogs, goals.waterMl, showToast]);
-
-  const setWater = useCallback(async (totalMl: number, date?: string) => {
-    const targetDate = date || selectedDate;
-    const newTotal = Math.max(0, Math.round(totalMl));
-    const updated = await saveWaterForDate(targetDate, newTotal);
-    setWaterLogsState(updated);
-
-    // Sync water log to Supabase
-    supabaseSyncWaterLog(targetDate, newTotal);
-
-    triggerSuccessFeedback();
-    showToast('Hydration Updated 💧', `Set to ${(newTotal / 1000).toFixed(2)}L for ${targetDate}`, 'droplet');
-  }, [selectedDate, showToast]);
-
-  // Weight Tracking Handlers
-  const addWeight = useCallback(async (data: { weightKg: number; weightLbs: number; date?: string; note?: string }) => {
-    const targetDate = data.date || getTodayDateString();
-    const updated = await addWeightLog({
-      weightKg: data.weightKg,
-      weightLbs: data.weightLbs,
-      date: targetDate,
-      note: data.note,
-    });
-    setWeightLogsState(updated);
-
-    // Synchronize userProfile weight to match
-    const updatedProfile: UserProfile = { ...userProfile, weightKg: data.weightKg };
-    setUserProfile(updatedProfile);
-    await saveUserProfile(updatedProfile);
-
-    // Sync to Supabase
-    const entryId = updated[0]?.id || `w_${Date.now()}`;
-    supabaseSyncWeightLog({
-      id: entryId,
-      weightKg: data.weightKg,
-      weightLbs: data.weightLbs,
-      date: targetDate,
-      timestamp: new Date().toISOString(),
-      note: data.note,
-    });
-
-    triggerLightImpact();
-    const displayVal = userProfile.unitSystem === 'imperial' ? `${data.weightLbs} lbs` : `${data.weightKg} kg`;
-    showToast('Weigh-In Saved', `${displayVal} recorded for ${targetDate}`, 'sparkles');
-  }, [userProfile, showToast]);
-
-  const deleteWeight = useCallback(async (id: string) => {
-    const updated = await deleteWeightLog(id);
-    setWeightLogsState(updated);
-    if (updated.length > 0) {
-      const newActiveKg = updated[0].weightKg;
-      const updatedProfile: UserProfile = { ...userProfile, weightKg: newActiveKg };
-      setUserProfile(updatedProfile);
-      await saveUserProfile(updatedProfile);
-    }
-    showToast('Log Removed', 'Weigh-in entry deleted.', 'sparkles');
-  }, [userProfile, showToast]);
-
-  // Authentication Handlers
-  const signIn = useCallback(
-    async (email: string, name?: string, password?: string) => {
-      setIsSyncing(true);
-      try {
-        const cleanEmail = email.trim().toLowerCase();
-        const displayName = name?.trim() || cleanEmail.split('@')[0] || 'User';
-
-        const res = await supabaseSignIn(cleanEmail, password, displayName);
-        const account: UserAccount = res.user || (await signInUser(cleanEmail, displayName));
-
-        setUserAccount(account);
-        await saveUserAccount(account);
-
-        // Safe background data synchronization so UI responds immediately
-        (async () => {
-          try {
-            const currentWeights = await getWeightLogs();
-            await supabasePushLocalData({
-              entries,
-              weights: currentWeights,
-              waterLogs,
-              goals,
-              profile: userProfile,
-            });
-
-            const cloudData = await supabaseFetchAllUserData();
-            if (cloudData) {
-              if (cloudData.foodEntries && cloudData.foodEntries.length > 0) {
-                setEntries(cloudData.foodEntries);
-                await setAllFoodEntries(cloudData.foodEntries);
-              }
-              if (cloudData.waterLogs && Object.keys(cloudData.waterLogs).length > 0) {
-                setWaterLogsState((prev) => ({ ...prev, ...cloudData.waterLogs }));
-                await setAllWaterLogs({ ...waterLogs, ...cloudData.waterLogs });
-              }
-              if (cloudData.goals) {
-                setGoals(cloudData.goals);
-                await saveMacroGoals(cloudData.goals);
-              }
-              if (cloudData.profile) {
-                setUserProfile(cloudData.profile);
-                await saveUserProfile(cloudData.profile);
-              }
-            }
-          } catch (syncErr) {
-            console.warn('Background sync notice:', syncErr);
-          }
-        })();
-
-        showToast('Welcome back! 👋', `Multi-device cloud sync active for ${account.name}`, 'sparkles');
-      } catch (err) {
-        console.warn('Sign in fallback notice:', err);
-        const account = await signInUser(email, name);
-        setUserAccount(account);
-        await saveUserAccount(account);
-        showToast('Welcome! 👋', `Signed in as ${account.name}`, 'sparkles');
-      } finally {
-        setIsSyncing(false);
-      }
-    },
-    [entries, waterLogs, goals, userProfile, showToast]
+      entries: active,
+      goalMet: isCalorieGoalMet(consumed.calories, goals.calories),
+    }),
+    [selectedDate, consumed, active, goals.calories],
   );
-
-  const signInWithGoogle = useCallback(async (): Promise<boolean> => {
-    setIsSyncing(true);
-    try {
-      const res = await supabaseSignInWithGoogle();
-      if (res.error === 'cancelled') {
-        return false;
-      }
-      if (res.error) {
-        throw new Error(res.error);
-      }
-      if (res.user) {
-        setUserAccount(res.user);
-        await saveUserAccount(res.user);
-
-        // Safe background cloud sync
-        (async () => {
-          try {
-            const currentWeights = await getWeightLogs();
-            await supabasePushLocalData({
-              entries,
-              weights: currentWeights,
-              waterLogs,
-              goals,
-              profile: userProfile,
-            });
-
-            const cloudData = await supabaseFetchAllUserData();
-            if (cloudData) {
-              if (cloudData.foodEntries && cloudData.foodEntries.length > 0) {
-                setEntries(cloudData.foodEntries);
-                await setAllFoodEntries(cloudData.foodEntries);
-              }
-              if (cloudData.waterLogs && Object.keys(cloudData.waterLogs).length > 0) {
-                setWaterLogsState((prev) => ({ ...prev, ...cloudData.waterLogs }));
-                await setAllWaterLogs({ ...waterLogs, ...cloudData.waterLogs });
-              }
-              if (cloudData.goals) {
-                setGoals(cloudData.goals);
-                await saveMacroGoals(cloudData.goals);
-              }
-              if (cloudData.profile) {
-                setUserProfile(cloudData.profile);
-                await saveUserProfile(cloudData.profile);
-              }
-            }
-          } catch (syncErr) {
-            console.warn('Background sync notice:', syncErr);
-          }
-        })();
-
-        showToast('Welcome back! 👋', `Signed in with Google as ${res.user.name}`, 'sparkles');
-        return true;
-      }
-      return false;
-    } finally {
-      setIsSyncing(false);
+  const renderedOwner = userAccount.isLoggedIn ? userAccount.id : 'guest';
+  const persist = async <T,>(
+    operation: () => Promise<T>,
+    owner = renderedOwner,
+  ): Promise<T> => {
+    if (isLoading) throw new Error('Wait for your account to finish loading.');
+    if (owner !== ownerRef.current || owner !== storage.getStorageScope())
+      throw new Error(
+        'The account changed. Review this action in the current account.',
+      );
+    const result = await operation();
+    if (ownerRef.current === owner) {
+      await refreshLocal(owner);
+      backgroundSync();
     }
-  }, [entries, waterLogs, goals, userProfile, showToast]);
-
-  const signInWithApple = useCallback(async (): Promise<boolean> => {
-    setIsSyncing(true);
-    try {
-      const res = await supabaseSignInWithApple();
-      if (res.error === 'cancelled') {
-        return false;
-      }
-      if (res.error) {
-        throw new Error(res.error);
-      }
-      if (res.user) {
-        setUserAccount(res.user);
-        await saveUserAccount(res.user);
-
-        const currentWeights = await getWeightLogs();
-        await supabasePushLocalData({
-          entries,
-          weights: currentWeights,
-          waterLogs,
-          goals,
-          profile: userProfile,
-        });
-
-        const cloudData = await supabaseFetchAllUserData();
-        if (cloudData) {
-          if (cloudData.foodEntries && cloudData.foodEntries.length > 0) {
-            setEntries(cloudData.foodEntries);
-            await setAllFoodEntries(cloudData.foodEntries);
-          }
-          if (cloudData.waterLogs) {
-            const mergedWater = { ...waterLogs, ...cloudData.waterLogs };
-            setWaterLogsState(mergedWater);
-            await setAllWaterLogs(mergedWater);
-          }
-          if (cloudData.goals) {
-            setGoals(cloudData.goals);
-            await saveMacroGoals(cloudData.goals);
-          }
-          if (cloudData.profile) {
-            setUserProfile(cloudData.profile);
-            await saveUserProfile(cloudData.profile);
-          }
-        }
-
-        showToast('Welcome back! 👋', `Signed in with Apple as ${res.user.name}`, 'sparkles');
-        return true;
-      }
-      return false;
-    } finally {
-      setIsSyncing(false);
+    return result;
+  };
+  const logMeal: NutritionContextType['logMeal'] = async (meal) => {
+    const owner = renderedOwner,
+      targetDate = meal.date ?? selectedDate;
+    const before = (await storage.getFoodEntries())
+      .filter((e) => e.date === targetDate)
+      .reduce((sum, e) => sum + e.calories, 0);
+    const value: FoodEntry = {
+      ...meal,
+      id: newId('meal'),
+      timestamp: new Date().toISOString(),
+      date: targetDate,
+    };
+    const result = await persist(() => storage.saveFoodEntry(value), owner);
+    if (ownerRef.current !== owner) return;
+    const total = result.entries
+      .filter((e) => e.date === targetDate)
+      .reduce((sum, e) => sum + e.calories, 0);
+    if (
+      targetDate === storage.getTodayDateString() &&
+      !isCalorieGoalMet(before, goals.calories) &&
+      isCalorieGoalMet(total, goals.calories) &&
+      (await storage.markCelebrated(targetDate))
+    ) {
+      setRewardState({
+        visible: true,
+        streak: result.stats.currentStreak,
+        title: 'Daily target reached',
+        subtitle: `${total} kcal logged today.`,
+        caloriesAdded: meal.calories,
+      });
+      if (notificationSettings.enabled)
+        void sendInstantStreakCelebration(result.stats.currentStreak).catch(
+          () => {},
+        );
+    } else {
+      triggerSuccessFeedback();
+      showToast('Meal saved', `${meal.name} · ${meal.calories} kcal`);
     }
-  }, [entries, waterLogs, goals, userProfile, showToast]);
-
-  const signOut = useCallback(async () => {
+    void scheduleMealReminders(notificationSettings, result.entries).catch(
+      (error) => showToast('Reminder setup failed', error.message),
+    );
+  };
+  const editMeal: NutritionContextType['editMeal'] = async (entry) => {
+    await persist(() => storage.updateFoodEntry(entry));
+    showToast('Meal updated', entry.name);
+  };
+  const removeMeal: NutritionContextType['removeMeal'] = async (id) => {
+    await persist(() => storage.deleteFoodEntry(id));
+    showToast('Meal deleted', 'Your daily totals have been updated.');
+  };
+  const logWater: NutritionContextType['logWater'] = async (amount, date) => {
+    const value = await persist(() =>
+      storage.incrementWaterForDate(date ?? selectedDate, amount),
+    );
+    triggerLightImpact();
+    showToast('Water saved', `${value[date ?? selectedDate]} ml logged.`);
+  };
+  const setWater: NutritionContextType['setWater'] = async (total, date) => {
+    await persist(() => storage.saveWaterForDate(date ?? selectedDate, total));
+  };
+  const addWeight: NutritionContextType['addWeight'] = async (data) => {
+    await persist(() =>
+      storage.saveWeightAndProfile({
+        ...data,
+        date: data.date ?? selectedDate,
+      }),
+    );
+    showToast('Weight saved', 'Your weight history has been updated.');
+  };
+  const deleteWeight: NutritionContextType['deleteWeight'] = async (id) => {
+    await persist(() => storage.deleteWeightAndUpdateProfile(id));
+  };
+  const updateGoals: NutritionContextType['updateGoals'] = async (value) => {
+    await persist(() => storage.saveMacroGoals(value));
+    showToast('Targets saved', `${value.calories} kcal per day.`);
+  };
+  const saveProfile: NutritionContextType['saveProfile'] = async (
+    profile,
+    newGoals,
+  ) => {
+    await persist(() => storage.saveProfileAndTargets(profile, newGoals));
+    setOnboardingVisible(false);
+    showToast('Profile saved', 'Your targets have been updated.');
+  };
+  const updateNotifications: NutritionContextType['updateNotifications'] =
+    async (settings) => {
+      await persist(() => storage.saveNotificationSettings(settings));
+      await scheduleMealReminders(settings, entries);
+    };
+  const signIn: NutritionContextType['signIn'] = async (
+    email,
+    name,
+    password,
+    isSignUpMode = false,
+  ) => {
+    const result = await (isSignUpMode ? supabaseSignUp : supabaseSignIn)(
+      email,
+      password,
+      name,
+    );
+    if (result.error) throw new Error(result.error);
+    if (result.confirmationRequired) return false;
+    if (!result.user) throw new Error('No authenticated session was created.');
+    await activateAccount(result.user);
+    return true;
+  };
+  const provider = async (method: typeof supabaseSignInWithGoogle) => {
+    const result = await method();
+    if (result.error === 'cancelled') return false;
+    if (result.error) throw new Error(result.error);
+    if (!result.user) throw new Error('Sign in failed.');
+    await activateAccount(result.user);
+    return true;
+  };
+  const signInWithGoogle = () => provider(supabaseSignInWithGoogle);
+  const signInWithApple = () => provider(supabaseSignInWithApple);
+  const signOut = async () => {
     await supabaseSignOut();
-    const account = await signOutUser();
-    setUserAccount(account);
-    showToast('Signed Out', 'You are now browsing in guest mode.', 'sparkles');
-  }, [showToast]);
-
-  const updateAccount = useCallback(async (partial: Partial<UserAccount>) => {
-    setUserAccount((prev) => {
-      const updated = { ...prev, ...partial };
-      saveUserAccount(updated);
-      return updated;
+    await activateAccount(storage.DEFAULT_ACCOUNT);
+    showToast('Signed out', 'Your account data is separate from guest data.');
+  };
+  const updateAccount = async (partial: Partial<UserAccount>) => {
+    if (!userAccount.isLoggedIn)
+      throw new Error('Sign in before editing your account.');
+    const { data, error } = await supabase.auth.updateUser({
+      data: { full_name: partial.name ?? userAccount.name },
     });
-    showToast('Profile Updated', 'Account details saved successfully.', 'sparkles');
-  }, [showToast]);
-
-  // Manual Trigger Full Cloud Sync
-  const syncCloudNow = useCallback(async () => {
-    if (!userAccount.isLoggedIn) {
-      showToast('Guest Mode', 'Sign in to sync your data to the cloud.', 'sparkles');
+    if (error) throw error;
+    if (data.user) setUserAccount(accountFromAuthUser(data.user));
+  };
+  const toggleFavoriteMeal: NutritionContextType['toggleFavoriteMeal'] = async (
+    meal,
+  ) => {
+    const found = favoriteMeals.find(
+      (f) => f.name.trim().toLowerCase() === meal.name.trim().toLowerCase(),
+    );
+    await persist(() =>
+      found
+        ? storage.removeFavoriteMeal(found.id)
+        : storage.saveFavoriteMeal(meal),
+    );
+    return !found;
+  };
+  const isFavoriteMeal = (name: string) =>
+    favoriteMeals.some(
+      (f) => f.name.trim().toLowerCase() === name.trim().toLowerCase(),
+    );
+  const setDietaryPreference: NutritionContextType['setDietaryPreference'] =
+    async (preference) => {
+      await persist(() => storage.saveDietaryPreference(preference));
+    };
+  const updateHealthSync: NutritionContextType['updateHealthSync'] = async (
+    settings,
+  ) => {
+    if (settings.appleHealthEnabled || settings.googleFitEnabled)
+      throw new Error('Health integration is not available in this build.');
+    await persist(() =>
+      storage.saveHealthSyncSettings({
+        ...healthSync,
+        ...settings,
+        lastSyncedAt: undefined,
+      }),
+    );
+  };
+  const repeatYesterdayMeal: NutritionContextType['repeatYesterdayMeal'] =
+    async (mealType) => {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const meals = entries.filter(
+        (e) =>
+          e.date === storage.toLocalDateString(yesterday) &&
+          e.mealType === mealType,
+      );
+      const copies = meals.map((e) => ({
+        ...e,
+        id: newId('meal'),
+        timestamp: new Date().toISOString(),
+        date: selectedDate,
+        isAiGenerated: false,
+      }));
+      if (copies.length)
+        await persist(() => storage.saveFoodEntriesBatch(copies));
+      showToast(
+        copies.length ? 'Meals copied' : 'No meals to copy',
+        `${copies.length} ${mealType} entries.`,
+      );
+      return copies.length;
+    };
+  const recentMeals = useMemo(() => recentJournalMeals(entries), [entries]);
+  const recordedWeights = useMemo(
+    () => recordedWeightsThrough(weightLogs, today),
+    [weightLogs, today],
+  );
+  const start = recordedWeights[0]?.weightKg ?? userProfile.weightKg,
+    current = recordedWeights.at(-1)?.weightKg ?? userProfile.weightKg;
+  const progress = weightProgress(start, current, userProfile.targetWeightKg);
+  const scans = useMemo(() => entries.filter(isScannedMeal).length, [entries]);
+  const proteinDays = useMemo(
+    () =>
+      Object.values(
+        entries.reduce<Record<string, number>>((a, e) => {
+          a[e.date] = (a[e.date] ?? 0) + e.protein;
+          return a;
+        }, {}),
+      ),
+    [entries],
+  );
+  const todayProtein = useMemo(
+    () =>
+      entries.reduce(
+        (total, entry) => total + (entry.date === today ? entry.protein : 0),
+        0,
+      ),
+    [entries, today],
+  );
+  const todayWater = waterLogs[today] ?? 0;
+  const waterBest = Math.max(0, ...Object.values(waterLogs));
+  const milestoneBadges: MilestoneBadge[] = useMemo(
+    () =>
+      [
+        {
+          id: 'badge_streak_7',
+          title: 'Seven days',
+          description: 'Log meals for seven consecutive days.',
+          category: 'streak',
+          icon: 'flame',
+          isUnlocked: stats.bestStreak >= 7,
+          progress: Math.min(1, stats.bestStreak / 7),
+          progressText: `${stats.bestStreak}/7 days`,
+        },
+        {
+          id: 'badge_streak_30',
+          title: 'Thirty days',
+          description: 'Log meals for thirty consecutive days.',
+          category: 'streak',
+          icon: 'flame',
+          isUnlocked: stats.bestStreak >= 30,
+          progress: Math.min(1, stats.bestStreak / 30),
+          progressText: `${stats.bestStreak}/30 days`,
+        },
+        {
+          id: 'badge_protein',
+          title: 'Protein target',
+          description: 'Reach your protein target on a logged day.',
+          category: 'nutrition',
+          icon: 'zap',
+          isUnlocked:
+            proteinDays.some((p) => p >= goals.protein) && goals.protein > 0,
+          progress:
+            goals.protein > 0
+              ? Math.min(1, Math.max(0, ...proteinDays) / goals.protein)
+              : 0,
+          progressText: `${todayProtein}g today`,
+        },
+        {
+          id: 'badge_water',
+          title: 'Water target',
+          description: 'Reach your recorded water target.',
+          category: 'water',
+          icon: 'droplet',
+          isUnlocked: waterBest >= (goals.waterMl ?? 2000),
+          progress: Math.min(1, waterBest / (goals.waterMl ?? 2000)),
+          progressText: `${todayWater} ml today`,
+        },
+        {
+          id: 'badge_ai_scanner',
+          title: 'Ten scans',
+          description: 'Log ten meals from scans.',
+          category: 'scans',
+          icon: 'camera',
+          isUnlocked: scans >= 10,
+          progress: Math.min(1, scans / 10),
+          progressText: `${scans}/10 scans`,
+        },
+        {
+          id: 'badge_weight_goal',
+          title: 'Weight target',
+          description: 'Record a weigh-in within 0.5 kg of your target.',
+          category: 'weight',
+          icon: 'scale',
+          isUnlocked:
+            recordedWeights.length > 0 &&
+            Math.abs(current - userProfile.targetWeightKg) <= 0.5,
+          progress,
+          progressText: `${Math.round(progress * 100)}%`,
+        },
+      ].map((b) => ({
+        ...b,
+        isUnlocked: b.isUnlocked || Boolean(snapshot?.badges[b.id]),
+        unlockedAt: snapshot?.badges[b.id],
+      })) as MilestoneBadge[],
+    [
+      stats,
+      proteinDays,
+      goals,
+      waterBest,
+      todayWater,
+      scans,
+      recordedWeights.length,
+      current,
+      userProfile.targetWeightKg,
+      progress,
+      todayProtein,
+      snapshot?.badges,
+    ],
+  );
+  useEffect(() => {
+    if (!snapshot) return;
+    const unrecorded = milestoneBadges.filter(
+      (b) => b.isUnlocked && !snapshot.badges[b.id],
+    );
+    if (unrecorded.length)
+      void storage
+        .recordBadges(unrecorded)
+        .then(() => refreshLocal())
+        .catch((error) =>
+          showToast('Badge save failed', String(error.message ?? error)),
+        );
+  }, [snapshot, milestoneBadges, refreshLocal, showToast]);
+  const dismissToast = useCallback(() => setToastNotification(null), []);
+  const dismissReward = useCallback(
+    () => setRewardState((r) => ({ ...r, visible: false })),
+    [],
+  );
+  const triggerManualReward = () => {
+    if (!dailySummary.goalMet) {
+      showToast('Target in progress', 'Keep logging your meals.');
       return;
     }
-
-    setIsSyncing(true);
-    try {
-      const currentWeights = await getWeightLogs();
-      await supabasePushLocalData({
-        entries,
-        weights: currentWeights,
-        waterLogs,
-        goals,
-        profile: userProfile,
-      });
-
-      const cloudData = await supabaseFetchAllUserData();
-      if (cloudData) {
-        if (cloudData.foodEntries) {
-          setEntries(cloudData.foodEntries);
-          await setAllFoodEntries(cloudData.foodEntries);
-        }
-        if (cloudData.waterLogs) {
-          setWaterLogsState(cloudData.waterLogs);
-          await setAllWaterLogs(cloudData.waterLogs);
-        }
-        if (cloudData.goals) {
-          setGoals(cloudData.goals);
-          await saveMacroGoals(cloudData.goals);
-        }
-        if (cloudData.profile) {
-          setUserProfile(cloudData.profile);
-          await saveUserProfile(cloudData.profile);
-        }
-      }
-      triggerSuccessFeedback();
-      showToast('Cloud Sync Complete ☁️', 'All meals, targets, weights, and water logs are up to date.', 'sparkles');
-    } catch (err) {
-      console.error('Manual sync failed:', err);
-      showToast('Sync Error', 'Could not sync with Supabase. Check your connection.', 'sparkles');
-    } finally {
-      setIsSyncing(false);
-    }
-  }, [userAccount.isLoggedIn, entries, waterLogs, goals, userProfile, showToast]);
-
-  // Food Logging Actions
-  const logMeal = useCallback(async (meal: Omit<FoodEntry, 'id' | 'timestamp' | 'date'> & { date?: string }) => {
-    try {
-      const targetDate = meal.date || selectedDate;
-      const entryId = `entry_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-      const newEntry: FoodEntry = {
-        ...meal,
-        id: entryId,
-        timestamp: new Date().toISOString(),
-        date: targetDate,
-      };
-
-      const { entries: updatedEntries, stats: updatedStats } = await saveFoodEntry(newEntry);
-      setEntries(updatedEntries);
-      setStats(updatedStats);
-
-      // Non-blocking sync to Supabase PostgreSQL database
-      supabaseSyncFoodEntry(newEntry);
-
-      // Trigger Haptic feedback on device
-      if (Platform.OS !== 'web') {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      }
-
-      // Check if this action triggers a milestone/reward celebration
-      const totalDayCal = updatedEntries
-        .filter((e) => e.date === targetDate)
-        .reduce((sum, e) => sum + (Number(e.calories) || 0), 0);
-
-      const isGoalHit = totalDayCal >= goals.calories * 0.9 && totalDayCal <= goals.calories * 1.1;
-
-      if (isGoalHit) {
-        // 🎵 Play success chime and trigger multi-stage celebration haptic
-        playGoalChime();
-        triggerGoalCelebrationHaptic();
-
-        setRewardState({
-          visible: true,
-          streak: stats.currentStreak + 1,
-          title: 'Macro Target Met! 🎯',
-          subtitle: `You locked in ${totalDayCal} kcal and hit your daily nutrition goal.`,
-          caloriesAdded: meal.calories,
-        });
-        sendInstantStreakCelebration(stats.currentStreak + 1);
-      } else {
-        triggerSuccessFeedback();
-        showToast(
-          `Logged ${meal.name}`,
-          `+${meal.calories} kcal • ${meal.protein}g Protein added to ${meal.mealType.toUpperCase()}`,
-          'flame'
-        );
-      }
-    } catch (error) {
-      console.error('Error logging meal:', error);
-    }
-  }, [selectedDate, goals.calories, stats.currentStreak, showToast]);
-
-  const editMeal = useCallback(async (entry: FoodEntry) => {
-    try {
-      const updated = await updateFoodEntry(entry);
-      setEntries(updated);
-      supabaseSyncFoodEntry(entry);
-      triggerSuccessFeedback();
-      showToast('Meal Updated', `${entry.name} adjusted to ${entry.calories} kcal.`, 'sparkles');
-    } catch (error) {
-      console.error('Error editing meal:', error);
-    }
-  }, [showToast]);
-
-  const removeMeal = useCallback(async (id: string) => {
-    try {
-      const updated = await deleteFoodEntry(id);
-      setEntries(updated);
-      supabaseDeleteFoodEntry(id);
-      triggerLightImpact();
-      showToast('Meal Deleted', 'Entry removed from daily log.', 'sparkles');
-    } catch (error) {
-      console.error('Error removing meal:', error);
-    }
-  }, [showToast]);
-
-  const updateGoals = useCallback(async (newGoals: MacroTargets) => {
-    setGoals(newGoals);
-    await saveMacroGoals(newGoals);
-    supabaseSyncMacroTargets(newGoals);
-    showToast('Goals Updated 🎯', `Daily budget: ${newGoals.calories} kcal • ${((newGoals.waterMl || 2000) / 1000).toFixed(1)}L Water`, 'sparkles');
-  }, [showToast]);
-
-  const saveProfile = useCallback(async (newProfile: UserProfile, newGoals: MacroTargets) => {
-    setUserProfile(newProfile);
-    setGoals(newGoals);
-    await saveUserProfile(newProfile);
-    await saveMacroGoals(newGoals);
-    await setOnboardingCompleted(true);
-
-    // Keep weight logs in 100% sync whenever profile weight changes
-    if (newProfile.weightKg) {
-      const lbs = Math.round(newProfile.weightKg * 2.20462 * 10) / 10;
-      const updated = await addWeightLog({
-        weightKg: newProfile.weightKg,
-        weightLbs: lbs,
-        date: getTodayDateString(),
-        note: 'Updated profile baseline',
-      });
-      setWeightLogsState(updated);
-    }
-
-    supabaseSyncUserProfile(newProfile);
-    supabaseSyncMacroTargets(newGoals);
-    showToast('Nutrition Plan Activated 🎯', `${newGoals.calories} kcal • ${newGoals.protein}g Protein Target`, 'sparkles');
-  }, [showToast]);
-
-  const updateNotifications = useCallback(async (newSettings: NotificationSettings) => {
-    setNotificationSettings(newSettings);
-    await saveNotificationSettings(newSettings);
-    await scheduleMealReminders(newSettings);
-  }, []);
-
-  // Distinct recent meals logged across all time
-  const recentMeals = useMemo(() => {
-    const seen = new Set<string>();
-    const list: FoodEntry[] = [];
-    for (const entry of entries) {
-      const clean = entry.name.trim().toLowerCase();
-      if (!seen.has(clean)) {
-        seen.add(clean);
-        list.push(entry);
-      }
-      if (list.length >= 8) break;
-    }
-    return list;
-  }, [entries]);
-
-  // Milestone Badges Computed State
-  const milestoneBadges = useMemo<MilestoneBadge[]>(() => {
-    const streak = stats.currentStreak || 0;
-    const totalMeals = stats.totalMealsLogged || 0;
-    const currentWeight = weightLogs[0]?.weightKg ?? userProfile.weightKg ?? 75;
-    const targetWeight = userProfile.targetWeightKg || 74;
-    const weightProgressPct = Math.min(1, Math.max(0, Math.abs(78 - currentWeight) / (Math.abs(78 - targetWeight) || 1)));
-
-    return [
-      {
-        id: 'badge_streak_7',
-        title: '7-Day Streak Beast',
-        description: 'Log daily nutrition for 7 consecutive days',
-        category: 'streak',
-        icon: 'flame',
-        isUnlocked: streak >= 7,
-        unlockedAt: streak >= 7 ? 'Earned' : undefined,
-        progress: Math.min(1, streak / 7),
-        progressText: `${Math.min(streak, 7)}/7 Days`,
-      },
-      {
-        id: 'badge_streak_30',
-        title: '30-Day Master',
-        description: 'Log daily nutrition for 30 consecutive days',
-        category: 'streak',
-        icon: 'trophy',
-        isUnlocked: streak >= 30,
-        unlockedAt: streak >= 30 ? 'Earned' : undefined,
-        progress: Math.min(1, streak / 30),
-        progressText: `${Math.min(streak, 30)}/30 Days`,
-      },
-      {
-        id: 'badge_protein_master',
-        title: 'Protein Master',
-        description: 'Hit 100%+ of your daily protein target budget',
-        category: 'nutrition',
-        icon: 'target',
-        isUnlocked: consumed.protein >= goals.protein && goals.protein > 0,
-        unlockedAt: consumed.protein >= goals.protein ? 'Earned Today' : undefined,
-        progress: goals.protein > 0 ? Math.min(1, consumed.protein / goals.protein) : 0,
-        progressText: `${consumed.protein}/${goals.protein}g`,
-      },
-      {
-        id: 'badge_hydration_hero',
-        title: 'Hydration Hero',
-        description: 'Drink and record at least 2.0L of water in a day',
-        category: 'water',
-        icon: 'droplet',
-        isUnlocked: waterMl >= (goals.waterMl || 2000),
-        unlockedAt: waterMl >= (goals.waterMl || 2000) ? 'Earned Today' : undefined,
-        progress: Math.min(1, waterMl / (goals.waterMl || 2000)),
-        progressText: `${(waterMl / 1000).toFixed(1)}L / ${((goals.waterMl || 2000) / 1000).toFixed(1)}L`,
-      },
-      {
-        id: 'badge_ai_scanner',
-        title: 'AI Vision Prodigy',
-        description: 'Log 10 meals using the AI camera or barcode scanner',
-        category: 'scans',
-        icon: 'camera',
-        isUnlocked: totalMeals >= 10,
-        unlockedAt: totalMeals >= 10 ? 'Earned' : undefined,
-        progress: Math.min(1, totalMeals / 10),
-        progressText: `${Math.min(totalMeals, 10)}/10 Meals`,
-      },
-      {
-        id: 'badge_weight_goal',
-        title: 'Target Weight Crusher',
-        description: 'Reach or surpass your target milestone body weight',
-        category: 'weight',
-        icon: 'scale',
-        isUnlocked: Math.abs(currentWeight - targetWeight) <= 0.5,
-        unlockedAt: Math.abs(currentWeight - targetWeight) <= 0.5 ? 'Earned' : undefined,
-        progress: weightProgressPct,
-        progressText: `${Math.round(weightProgressPct * 100)}% Progress`,
-      },
-    ];
-  }, [stats, weightLogs, userProfile, consumed.protein, goals, waterMl]);
-
-  // Favorites management
-  const toggleFavoriteMeal = useCallback(async (meal: {
-    name: string;
-    calories: number;
-    protein: number;
-    carbs: number;
-    fats: number;
-    mealType: any;
-    portionSize?: string;
-    imageUri?: string;
-  }): Promise<boolean> => {
-    const isFav = favoriteMeals.some((f) => f.name.toLowerCase() === meal.name.toLowerCase());
-    if (isFav) {
-      const match = favoriteMeals.find((f) => f.name.toLowerCase() === meal.name.toLowerCase());
-      if (match) {
-        const updated = await removeFavoriteMeal(match.id);
-        setFavoriteMealsState(updated);
-        showToast('Removed from Favorites', `${meal.name} unbookmarked.`, 'star');
-        return false;
-      }
-      return false;
-    } else {
-      const updated = await saveFavoriteMeal(meal);
-      setFavoriteMealsState(updated);
-      triggerSuccessFeedback();
-      showToast('Added to Favorites ⭐', `${meal.name} saved for 1-tap quick logging.`, 'star');
-      return true;
-    }
-  }, [favoriteMeals, showToast]);
-
-  const isFavoriteMeal = useCallback((name: string): boolean => {
-    return favoriteMeals.some((f) => f.name.toLowerCase() === name.trim().toLowerCase());
-  }, [favoriteMeals]);
-
-  const setDietaryPreference = useCallback(async (pref: DietaryPreference) => {
-    setDietaryPreferenceState(pref);
-    await saveDietaryPreference(pref);
-    showToast('Diet Preference Saved', `Set to ${pref.replace('_', ' ').toUpperCase()}`, 'sparkles');
-  }, [showToast]);
-
-  const updateHealthSync = useCallback(async (settings: Partial<HealthSyncSettings>) => {
-    const updated: HealthSyncSettings = { ...healthSync, ...settings, lastSyncedAt: new Date().toISOString() };
-    setHealthSyncState(updated);
-    await saveHealthSyncSettings(updated);
-    showToast('Health Sync Updated 🩺', 'Biometric sync settings updated.', 'sparkles');
-  }, [healthSync, showToast]);
-
-  // Repeat yesterday's specific meal slot into today
-  const repeatYesterdayMeal = useCallback(async (mealType: MealType): Promise<number> => {
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = toLocalDateString(yesterday);
-
-    const yesterdayMeals = entries.filter((e) => e.date === yesterdayStr && e.mealType === mealType);
-    if (yesterdayMeals.length === 0) {
-      showToast('No Meals Found', `No ${mealType} entries found for yesterday.`, 'sparkles');
-      return 0;
-    }
-
-    const targetDate = selectedDate || getTodayDateString();
-    const newEntries: FoodEntry[] = yesterdayMeals.map((item) => ({
-      id: `entry_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      name: item.name,
-      calories: item.calories,
-      protein: item.protein,
-      carbs: item.carbs,
-      fats: item.fats,
-      mealType: item.mealType,
-      portionSize: item.portionSize,
-      imageUri: item.imageUri,
-      date: targetDate,
-      timestamp: new Date().toISOString(),
-      isAiGenerated: false,
-    }));
-
-    const { entries: updatedEntries, stats: updatedStats } = await saveFoodEntriesBatch(newEntries);
-    setEntries(updatedEntries);
-    setStats(updatedStats);
-
-    // Non-blocking sync to Supabase in background
-    for (const entry of newEntries) {
-      supabaseSyncFoodEntry(entry);
-    }
-
-    triggerSuccessFeedback();
-    showToast(
-      `Repeated Yesterday's ${mealType.toUpperCase()} ⚡`,
-      `Logged ${yesterdayMeals.length} meal(s) into today's ${mealType}.`,
-      'sparkles'
-    );
-    return yesterdayMeals.length;
-  }, [entries, selectedDate, showToast]);
-
-  const dismissReward = useCallback(() => {
-    setRewardState((prev) => ({ ...prev, visible: false }));
-  }, []);
-
-  const triggerManualReward = useCallback(() => {
-    playGoalChime();
-    triggerGoalCelebrationHaptic();
     setRewardState({
       visible: true,
       streak: stats.currentStreak,
-      title: 'Daily Goal Achieved! 🏆',
-      subtitle: 'Perfect macro balance today! Keep the momentum going.',
+      title: 'Daily target reached',
+      subtitle: `${consumed.calories} kcal logged.`,
       caloriesAdded: 0,
     });
-  }, [stats.currentStreak]);
-
-
-  const contextValue = useMemo<NutritionContextType>(
-    () => ({
-      entries,
-      selectedDate,
-      setSelectedDate,
-      goals,
-      stats,
-      userProfile,
-      userAccount,
-      notificationSettings,
-      dailySummary,
-      waterMl,
-      waterLogs,
-      weightLogs,
-      favoriteMeals,
-      recentMeals,
-      dietaryPreference,
-      healthSync,
-      milestoneBadges,
-      consumed,
-      remaining,
-      isLoading,
-      isSyncing,
-      rewardState,
-      toastNotification,
-      onboardingVisible,
-      setOnboardingVisible,
-      logMeal,
-      editMeal,
-      removeMeal,
-      logWater,
-      setWater,
-      addWeight,
-      deleteWeight,
-      toggleFavoriteMeal,
-      isFavoriteMeal,
-      setDietaryPreference,
-      updateHealthSync,
-      repeatYesterdayMeal,
-      updateGoals,
-      saveProfile,
-      updateNotifications,
-      signIn,
-      signInWithGoogle,
-      signInWithApple,
-      signOut,
-      updateAccount,
-      syncCloudNow,
-
-      dismissReward,
-      triggerManualReward,
-      showToast,
-      dismissToast,
-      refreshData: loadData,
-    }),
-    [
-      entries,
-      selectedDate,
-      goals,
-      stats,
-      userProfile,
-      userAccount,
-      notificationSettings,
-      dailySummary,
-      waterMl,
-      waterLogs,
-      weightLogs,
-      favoriteMeals,
-      recentMeals,
-      dietaryPreference,
-      healthSync,
-      milestoneBadges,
-      consumed,
-      remaining,
-      isLoading,
-      isSyncing,
-      rewardState,
-      toastNotification,
-      onboardingVisible,
-      logMeal,
-      editMeal,
-      removeMeal,
-      logWater,
-      setWater,
-      addWeight,
-      deleteWeight,
-      toggleFavoriteMeal,
-      isFavoriteMeal,
-      setDietaryPreference,
-      updateHealthSync,
-      repeatYesterdayMeal,
-      updateGoals,
-      saveProfile,
-      updateNotifications,
-      signIn,
-      signInWithGoogle,
-      signInWithApple,
-      signOut,
-      updateAccount,
-      syncCloudNow,
-      dismissReward,
-      triggerManualReward,
-      showToast,
-      dismissToast,
-      loadData,
-    ]
-  );
-
+  };
+  const refreshData = async () => {
+    await refreshLocal();
+  };
+  const exportData = () => storage.exportLocalData();
+  const resetData = async () => {
+    await persist(() => storage.resetLocalData());
+  };
+  const contextValue: NutritionContextType = {
+    entries,
+    selectedDate,
+    setSelectedDate,
+    goals,
+    stats,
+    userProfile,
+    userAccount,
+    notificationSettings,
+    dailySummary,
+    waterMl,
+    waterLogs,
+    weightLogs,
+    favoriteMeals,
+    recentMeals,
+    dietaryPreference,
+    healthSync,
+    milestoneBadges,
+    consumed,
+    remaining,
+    isLoading,
+    isSyncing,
+    rewardState,
+    toastNotification,
+    onboardingVisible,
+    setOnboardingVisible,
+    logMeal,
+    editMeal,
+    removeMeal,
+    logWater,
+    setWater,
+    addWeight,
+    deleteWeight,
+    toggleFavoriteMeal,
+    isFavoriteMeal,
+    setDietaryPreference,
+    updateHealthSync,
+    repeatYesterdayMeal,
+    updateGoals,
+    saveProfile,
+    updateNotifications,
+    signIn,
+    signInWithGoogle,
+    signInWithApple,
+    signOut,
+    updateAccount,
+    syncCloudNow,
+    dismissReward,
+    triggerManualReward,
+    showToast,
+    dismissToast,
+    refreshData,
+    exportData,
+    resetData,
+  };
   return (
     <NutritionContext.Provider value={contextValue}>
-      {children}
+      {/* Render the journal after local hydration. Static HTML cannot know a device's records, locale or current date. */}
+      {snapshot ? (
+        <React.Fragment key={userAccount.id}>{children}</React.Fragment>
+      ) : !isLoading ? (
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: JOURNAL.paper,
+            padding: 24,
+            justifyContent: 'center',
+            alignItems: 'center',
+            gap: 16,
+          }}
+        >
+          <Text
+            accessibilityRole="alert"
+            style={{ color: JOURNAL.ink, fontSize: 20 }}
+          >
+            Unable to open your journal
+          </Text>
+          <Text
+            style={{ color: JOURNAL.muted, fontSize: 15, textAlign: 'center' }}
+          >
+            {toastNotification?.message ??
+              'Please try loading your account again.'}
+          </Text>
+          <TouchableOpacity
+            accessibilityRole="button"
+            onPress={() =>
+              void activateAccount(retryAccountRef.current).catch(() => {})
+            }
+            style={{
+              minHeight: 48,
+              padding: 16,
+              backgroundColor: JOURNAL.accent,
+              borderRadius: 12,
+            }}
+          >
+            <Text style={{ color: JOURNAL.surface, fontSize: 16 }}>
+              Try again
+            </Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+      {isLoading && (
+        <View
+          style={{
+            position: 'absolute',
+            inset: 0,
+            backgroundColor: JOURNAL.paper,
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+          accessibilityLabel="Loading your account"
+        >
+          <ActivityIndicator />
+        </View>
+      )}
     </NutritionContext.Provider>
   );
 }
-
-
-export function useNutrition() {
+export function useNutrition(): NutritionContextType {
   const context = useContext(NutritionContext);
-  if (!context) {
-    throw new Error('useNutrition must be used within a NutritionProvider');
-  }
+  if (!context)
+    throw new Error('useNutrition must be used within NutritionProvider');
   return context;
 }
-

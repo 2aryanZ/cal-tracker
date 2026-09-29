@@ -1,1174 +1,501 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   ScrollView,
   TextInput,
   TouchableOpacity,
   Switch,
-  SafeAreaView,
+  StyleSheet,
+  Modal,
+  ActivityIndicator,
+  Share,
   Platform,
-  Alert,
+  KeyboardAvoidingView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import {
-  X,
-  Target,
-  Bell,
-  Key,
-  Check,
-  Zap,
-  User,
-  SlidersHorizontal,
-  LogOut,
-  LogIn,
-  ShieldCheck,
-  Crown,
-  Database,
-  Droplet,
-  RefreshCw,
-  Utensils,
-} from 'lucide-react-native';
-
 import { useNutrition } from '@/context/NutritionContext';
-import { getApiKey, saveApiKey } from '@/services/storage';
-import { sendInstantStreakCelebration, requestNotificationPermissions } from '@/services/notificationService';
-import { MacroTargets, NotificationSettings, DietaryPreference } from '@/types/nutrition';
 import { AuthModal } from '@/components/AuthModal';
-import { PALETTE, FONTS } from '@/constants/theme';
-import { triggerLightImpact } from '@/services/hapticsService';
-import { calculatePersonalizedWaterIntake } from '@/services/tdeeCalculator';
-
-const DIET_PRESETS: { name: string; desc: string; goals: MacroTargets; pref: DietaryPreference }[] = [
-  {
-    name: 'Muscle Gain',
-    desc: 'High protein + moderate surplus',
-    goals: { calories: 2600, protein: 180, carbs: 280, fats: 75, waterMl: 3000 },
-    pref: 'high_protein',
-  },
-  {
-    name: 'Fat Loss (Cut)',
-    desc: 'Caloric deficit + high protein',
-    goals: { calories: 1850, protein: 160, carbs: 140, fats: 55, waterMl: 2500 },
-    pref: 'high_protein',
-  },
-  {
-    name: 'Balanced Fitness',
-    desc: 'Healthy maintenance ratio',
-    goals: { calories: 2200, protein: 150, carbs: 220, fats: 65, waterMl: 2000 },
-    pref: 'balanced',
-  },
-  {
-    name: 'Low Carb / Keto',
-    desc: 'High fat + very low carbs',
-    goals: { calories: 2000, protein: 140, carbs: 35, fats: 140, waterMl: 2500 },
-    pref: 'keto',
-  },
+import type {
+  MacroTargets,
+  NotificationSettings,
+  DietaryPreference,
+} from '@/types/nutrition';
+import { validateGoals } from '@/services/nutritionRules';
+import {
+  reviewPendingChanges,
+  resolveCloudConflict,
+} from '@/services/supabase';
+import { PALETTE, FONTS, JOURNAL } from '@/constants/theme';
+const goalFields: [keyof MacroTargets, string][] = [
+  ['calories', 'Calories (kcal)'],
+  ['protein', 'Protein (g)'],
+  ['carbs', 'Carbohydrate (g)'],
+  ['fats', 'Fat (g)'],
+  ['waterMl', 'Water (ml)'],
 ];
-
-export default function SettingsScreen() {
+const reminders: [
+  keyof NotificationSettings,
+  keyof NotificationSettings,
+  string,
+][] = [
+  ['breakfastReminder', 'breakfastTime', 'Breakfast'],
+  ['lunchReminder', 'lunchTime', 'Lunch'],
+  ['dinnerReminder', 'dinnerTime', 'Dinner'],
+  ['streakReminder', 'streakTime', 'Daily check-in'],
+];
+const prefs: DietaryPreference[] = [
+  'balanced',
+  'high_protein',
+  'keto',
+  'vegan',
+  'vegetarian',
+  'mediterranean',
+  'paleo',
+  'intermittent_fasting',
+];
+export function SettingsScreen({ embedded = false }: { embedded?: boolean }) {
   const router = useRouter();
   const {
     goals,
     updateGoals,
     notificationSettings,
     updateNotifications,
-    stats,
-    userProfile,
     userAccount,
     dietaryPreference,
     setDietaryPreference,
-    signIn,
     signOut,
     syncCloudNow,
     isSyncing,
     setOnboardingVisible,
-    triggerManualReward,
     showToast,
+    exportData,
+    resetData,
+    refreshData,
   } = useNutrition();
-
-
-  // Evidence-based personalized hydration calculated from biometrics
-  const recommendedHydration = useMemo(() => {
-    return calculatePersonalizedWaterIntake(
-      userProfile?.weightKg || 78,
-      userProfile?.heightCm || 178,
-      userProfile?.gender || 'male',
-      userProfile?.activityLevel || 'moderate',
-      userProfile?.goal || 'fat_loss'
-    );
-  }, [userProfile]);
-
-  // Targets & Notifications local override state
-  const [userEditedGoals, setUserEditedGoals] = useState<Partial<MacroTargets> | null>(null);
-  const [userEditedNotifs, setUserEditedNotifs] = useState<NotificationSettings | null>(null);
-
-  const calories = userEditedGoals?.calories !== undefined ? String(userEditedGoals.calories) : String(goals.calories);
-  const protein = userEditedGoals?.protein !== undefined ? String(userEditedGoals.protein) : String(goals.protein);
-  const carbs = userEditedGoals?.carbs !== undefined ? String(userEditedGoals.carbs) : String(goals.carbs);
-  const fats = userEditedGoals?.fats !== undefined ? String(userEditedGoals.fats) : String(goals.fats);
-  const waterTargetInput = userEditedGoals?.waterMl !== undefined ? String(userEditedGoals.waterMl) : String(goals.waterMl || recommendedHydration.dailyWaterMl);
-
-  const notifs = userEditedNotifs ?? notificationSettings;
-
-  const setCalories = (val: string) => setUserEditedGoals((prev) => ({ ...(prev || goals), calories: Number(val) || 0 }));
-  const setProtein = (val: string) => setUserEditedGoals((prev) => ({ ...(prev || goals), protein: Number(val) || 0 }));
-  const setCarbs = (val: string) => setUserEditedGoals((prev) => ({ ...(prev || goals), carbs: Number(val) || 0 }));
-  const setFats = (val: string) => setUserEditedGoals((prev) => ({ ...(prev || goals), fats: Number(val) || 0 }));
-  const setWaterTargetInput = (val: string) => setUserEditedGoals((prev) => ({ ...(prev || goals), waterMl: Number(val) || 0 }));
-  const setNotifs = (val: NotificationSettings | ((prev: NotificationSettings) => NotificationSettings)) => {
-    setUserEditedNotifs(typeof val === 'function' ? val(notifs) : val);
-  };
-
-  // Gemini API Key state
-  const [apiKey, setApiKey] = useState('');
-
-  // Auth modal state
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-
-  useEffect(() => {
-    getApiKey().then((k) => setApiKey(k));
-  }, []);
-
-  const handleApplyPreset = (preset: typeof DIET_PRESETS[0]) => {
-    setUserEditedGoals(preset.goals);
-    showToast('Preset Loaded', `${preset.name} (${preset.goals.calories} kcal • ${((preset.goals.waterMl || 2000) / 1000).toFixed(1)}L Water)`, 'sparkles');
-  };
-
-  const handleSaveAll = async () => {
-    const updatedGoals: MacroTargets = {
-      calories: Number(calories) || 2200,
-      protein: Number(protein) || 150,
-      carbs: Number(carbs) || 220,
-      fats: Number(fats) || 65,
-      waterMl: Number(waterTargetInput) || 2000,
-    };
-
-    await updateGoals(updatedGoals);
-    await updateNotifications(notifs);
-    await saveApiKey(apiKey.trim());
-
-    showToast('Preferences Saved', 'Your targets and settings have been updated.', 'sparkles');
-    setTimeout(() => {
-      router.back();
-    }, 400);
-  };
-
-
-  const handleSignOutConfirm = () => {
-    Alert.alert('Sign Out', 'Are you sure you want to sign out of Cal tracker?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign Out',
-        style: 'destructive',
-        onPress: async () => {
-          await signOut();
-        },
-      },
-    ]);
-  };
-
-  const handleToggleReminderMaster = async (val: boolean) => {
-    if (val) {
-      const granted = await requestNotificationPermissions();
-      if (!granted && Platform.OS !== 'web') {
-        Alert.alert('Notifications', 'Please enable notifications in system settings to receive meal reminders.');
-      }
+  const [draft, setDraft] = useState<
+      Partial<Record<keyof MacroTargets, string>>
+    >({}),
+    [notifsDraft, setNotifs] = useState<NotificationSettings | null>(null),
+    [auth, setAuth] = useState(false),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState(''),
+    [reset, setReset] = useState(false),
+    [pending, setPending] = useState<
+      Awaited<ReturnType<typeof reviewPendingChanges>>
+    >([]);
+  const notifs = notifsDraft ?? notificationSettings;
+  const run = async (action: () => Promise<unknown>) => {
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      await action();
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : 'Unable to complete this action.',
+      );
+    } finally {
+      setBusy(false);
     }
-    const updated = { ...notifs, enabled: val };
-    setNotifs(updated);
-    await updateNotifications(updated);
-    showToast(
-      val ? 'Meal Reminders Enabled 🔔' : 'Reminders Paused',
-      val ? 'Breakfast, Lunch & Dinner alerts are scheduled.' : 'Notifications turned off.',
-      'bell'
-    );
   };
-
-  const handleTestMealReminder = (mealName: string) => {
-    showToast(
-      `🥗 Time for ${mealName}!`,
-      `Don't forget to track your ${mealName.toLowerCase()} with Cal tracker to keep your streak!`,
-      'utensils'
-    );
+  const save = async () => {
+    const values = Object.fromEntries(
+      goalFields.map(([key]) => [
+        key,
+        Number(draft[key] ?? goals[key] ?? 2000),
+      ]),
+    ) as unknown as MacroTargets;
+    validateGoals(values);
+    for (const [, key] of reminders)
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(notifs[key])))
+        throw new Error('Enter reminder times as HH:MM.');
+    await updateGoals(values);
+    await updateNotifications(notifs);
+    setDraft({});
+    setNotifs(null);
+    showToast('Settings saved', 'Your targets and reminders are saved.');
   };
-
-  const handleTestStreakAlert = async () => {
-    await sendInstantStreakCelebration(stats.currentStreak);
-    triggerManualReward();
-    showToast(
-      `🔥 ${stats.currentStreak}-Day Streak Active!`,
-      `Great consistency! Lock in your calories before midnight.`,
-      'flame'
-    );
+  const backup = async () => {
+    const json = await exportData();
+    if (Platform.OS === 'web') {
+      const url = URL.createObjectURL(
+        new Blob([json], { type: 'application/json' }),
+      );
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `cal-tracker-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } else
+      await Share.share({ title: 'Cal Tracker JSON backup', message: json });
   };
-
+  const review = async () => setPending(await reviewPendingChanges());
+  const resolve = async (id: string, keep: boolean) => {
+    await resolveCloudConflict(id, keep);
+    await refreshData();
+    await review();
+  };
   return (
-    <SafeAreaView style={styles.safeArea}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Settings & Profile</Text>
-        <TouchableOpacity style={styles.closeBtn} onPress={() => router.back()}>
-          <X size={18} color={PALETTE[950]} />
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView
-        style={styles.scrollContainer}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}>
-        {/* User Account / Sign In / Sign Out Section */}
-        <Text style={styles.sectionTitle}>ACCOUNT & MEMBERSHIP</Text>
-        <View style={styles.accountCard}>
-          <View style={styles.accountTop}>
-            <View style={styles.accountAvatarBox}>
-              <User size={22} color={PALETTE[950]} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <View style={styles.accountNameRow}>
-                <Text style={styles.accountName}>{userAccount.name}</Text>
-                {userAccount.isLoggedIn ? (
-                  <View style={styles.tierBadge}>
-                    <Crown size={11} color={PALETTE[700]} />
-                    <Text style={styles.tierBadgeText}>{userAccount.tier} Member</Text>
-                  </View>
-                ) : (
-                  <View style={styles.guestBadge}>
-                    <Text style={styles.guestBadgeText}>Guest Mode</Text>
-                  </View>
-                )}
-              </View>
-              <Text style={styles.accountEmail}>
-                {userAccount.isLoggedIn
-                  ? `${userAccount.email} • Joined ${userAccount.memberSince}`
-                  : 'Sign in to sync your data across devices'}
-              </Text>
-            </View>
-          </View>
-
-          {userAccount.isLoggedIn ? (
-            <View style={{ gap: 8, marginTop: 12 }}>
-              <TouchableOpacity
-                style={styles.signOutBtn}
-                onPress={handleSignOutConfirm}
-                activeOpacity={0.85}>
-                <LogOut size={14} color="#DC2626" />
-                <Text style={styles.signOutBtnText}>Sign Out of Account</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.switchAccountBtn}
-                onPress={() => setIsAuthModalOpen(true)}
-                activeOpacity={0.85}>
-                <RefreshCw size={13} color={PALETTE[700]} />
-                <Text style={styles.switchAccountBtnText}>Switch / Link Another Account</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <TouchableOpacity
-              style={styles.signInBtn}
-              onPress={() => setIsAuthModalOpen(true)}
-              activeOpacity={0.85}>
-              <LogIn size={15} color={PALETTE[50]} />
-              <Text style={styles.signInBtnText}>Sign In with Google / Email</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* User Biometrics */}
-        <Text style={styles.sectionTitle}>SCIENTIFIC NUTRITION PROFILE</Text>
-        <View style={styles.profileCard}>
-          <View style={styles.profileTop}>
-            <View style={styles.profileIconBox}>
-              <ShieldCheck size={20} color={PALETTE[950]} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.profileName}>
-                {userProfile.gender === 'male' ? 'Male' : 'Female'} • {userProfile.age} yrs • {userProfile.unitSystem === 'imperial' ? `${Math.round(userProfile.weightKg * 2.20462 * 10) / 10} lbs` : `${userProfile.weightKg} kg`}
-              </Text>
-              <Text style={styles.profileSub}>
-                Goal: {userProfile.goal === 'fat_loss' ? 'Fat Loss' : userProfile.goal === 'muscle_gain' ? 'Muscle Gain' : userProfile.goal === 'recomposition' ? 'Body Recomp' : 'Maintenance'}
-              </Text>
-            </View>
-
-          </View>
-
-          <TouchableOpacity
-            style={styles.recalcBtn}
-            onPress={() => {
-              router.back();
-              setTimeout(() => setOnboardingVisible(true), 300);
-            }}
-            activeOpacity={0.85}>
-            <SlidersHorizontal size={15} color={PALETTE[50]} />
-            <Text style={styles.recalcBtnText}>Recalculate Metabolic Plan (Onboarding)</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Diet Presets */}
-        <Text style={styles.sectionTitle}>QUICK DIET PRESETS</Text>
-        <View style={styles.presetGrid}>
-          {DIET_PRESETS.map((p) => (
-            <TouchableOpacity
-              key={p.name}
-              style={styles.presetCard}
-              onPress={() => handleApplyPreset(p)}
-              activeOpacity={0.8}>
-              <View style={styles.presetHeader}>
-                <Text style={styles.presetName}>{p.name}</Text>
-                <Zap size={13} color={PALETTE[600]} />
-              </View>
-              <Text style={styles.presetDesc}>{p.desc}</Text>
-              <Text style={styles.presetCals}>{p.goals.calories} kcal • {p.goals.protein}g P</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Custom Targets Inputs */}
-        <Text style={styles.sectionTitle}>CUSTOM DAILY TARGETS</Text>
-        <View style={styles.card}>
-          <View style={styles.inputRow}>
-            <View style={styles.inputLabelGroup}>
-              <Target size={15} color={PALETTE[950]} />
-              <Text style={styles.inputLabel}>Calories Target</Text>
-            </View>
-            <View style={styles.inputValContainer}>
-              <TextInput
-                value={calories}
-                onChangeText={setCalories}
-                keyboardType="numeric"
-                style={styles.numberInput}
-              />
-              <Text style={styles.unitText}>kcal</Text>
-            </View>
-          </View>
-
-          <View style={styles.inputRow}>
-            <View style={styles.inputLabelGroup}>
-              <View style={[styles.dot, { backgroundColor: PALETTE[700] }]} />
-              <Text style={styles.inputLabel}>Protein Target</Text>
-            </View>
-            <View style={styles.inputValContainer}>
-              <TextInput
-                value={protein}
-                onChangeText={setProtein}
-                keyboardType="numeric"
-                style={styles.numberInput}
-              />
-              <Text style={styles.unitText}>g</Text>
-            </View>
-          </View>
-
-          <View style={styles.inputRow}>
-            <View style={styles.inputLabelGroup}>
-              <View style={[styles.dot, { backgroundColor: PALETTE[500] }]} />
-              <Text style={styles.inputLabel}>Carbs Target</Text>
-            </View>
-            <View style={styles.inputValContainer}>
-              <TextInput
-                value={carbs}
-                onChangeText={setCarbs}
-                keyboardType="numeric"
-                style={styles.numberInput}
-              />
-              <Text style={styles.unitText}>g</Text>
-            </View>
-          </View>
-
-          <View style={styles.inputRow}>
-            <View style={styles.inputLabelGroup}>
-              <View style={[styles.dot, { backgroundColor: PALETTE[400] }]} />
-              <Text style={styles.inputLabel}>Fats Target</Text>
-            </View>
-            <View style={styles.inputValContainer}>
-              <TextInput
-                value={fats}
-                onChangeText={setFats}
-                keyboardType="numeric"
-                style={styles.numberInput}
-              />
-              <Text style={styles.unitText}>g</Text>
-            </View>
-          </View>
-
-          <View style={[styles.inputRow, { borderBottomWidth: 0 }]}>
-            <View style={styles.inputLabelGroup}>
-              <Droplet size={15} color="#0284C7" fill="#0284C7" />
-              <Text style={styles.inputLabel}>Water Target</Text>
-            </View>
-            <View style={styles.inputValContainer}>
-              <TextInput
-                value={waterTargetInput}
-                onChangeText={setWaterTargetInput}
-                keyboardType="numeric"
-                style={styles.numberInput}
-              />
-              <Text style={styles.unitText}>ml ({(Number(waterTargetInput || 0) / 1000).toFixed(1)}L)</Text>
-            </View>
-          </View>
-
-          <View style={styles.waterHelpContainer}>
-            <Text style={styles.waterHelpText}>
-              Recommended: {recommendedHydration.dailyWaterMl} ml (~{recommendedHydration.recommendedGlasses} glasses / day)
+    <SafeAreaView
+      edges={embedded ? ['top'] : ['top', 'bottom']}
+      style={styles.page}
+    >
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          contentContainerStyle={styles.body}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.header}>
+            <Text style={styles.title}>
+              {embedded ? 'Your profile' : 'Settings'}
             </Text>
-            {Number(waterTargetInput) !== recommendedHydration.dailyWaterMl && (
+            {!embedded && (
               <TouchableOpacity
-                onPress={() => {
-                  triggerLightImpact();
-                  setWaterTargetInput(String(recommendedHydration.dailyWaterMl));
-                }}
-                style={styles.waterResetBtn}
-                activeOpacity={0.8}>
-                <Text style={styles.waterResetBtnText}>
-                  Use Recommended ({recommendedHydration.dailyWaterMl} ml)
-                </Text>
+                accessibilityRole="button"
+                style={styles.button}
+                onPress={() => router.back()}
+              >
+                <Text>Close</Text>
               </TouchableOpacity>
             )}
           </View>
-        </View>
-
-        {/* Dietary Preferences & Lifestyle Card */}
-        <Text style={styles.sectionTitle}>DIETARY PREFERENCES & LIFESTYLE</Text>
-        <View style={styles.card}>
-          <View style={styles.apiKeyHeader}>
-            <Utensils size={15} color={PALETTE[950]} />
-            <Text style={styles.apiKeyLabel}>Active Nutrition Protocol</Text>
-          </View>
-          <Text style={styles.apiKeySub}>
-            Guides AI Coach insights, voice meal suggestions, and meal planning blueprints.
-          </Text>
-
-          <View style={styles.prefGrid}>
-            {[
-              { key: 'high_protein' as const, label: 'High Protein', desc: 'Focus on muscle building & recovery' },
-              { key: 'balanced' as const, label: 'Balanced', desc: 'Equal macro split for sustainable energy' },
-              { key: 'keto' as const, label: 'Keto / Low-Carb', desc: 'High fat & minimal carbohydrates' },
-              { key: 'vegan' as const, label: 'Plant-Based / Vegan', desc: '100% plant-derived nutrients' },
-            ].map((item) => (
-              <TouchableOpacity
-                key={item.key}
-                style={[styles.prefItem, dietaryPreference === item.key && styles.prefItemActive]}
-                onPress={() => {
-                  triggerLightImpact();
-                  setDietaryPreference(item.key);
-                  showToast('Preference Updated', `Dietary style set to ${item.label}`, 'sparkles');
-                }}
-                activeOpacity={0.8}>
-                <View style={styles.prefLeft}>
-                  <Text style={[styles.prefTitle, dietaryPreference === item.key && styles.prefTitleActive]}>
-                    {item.label}
+          {error ? (
+            <Text accessibilityRole="alert" style={styles.error}>
+              {error}
+            </Text>
+          ) : null}
+          {busy ? (
+            <ActivityIndicator accessibilityLabel="Saving settings" />
+          ) : null}
+          <View style={styles.card}>
+            <Text style={styles.subtitle}>Account</Text>
+            <Text style={styles.text}>
+              {userAccount.isLoggedIn
+                ? `${userAccount.name}\n${userAccount.email}`
+                : 'Guest — data is stored on this device.'}
+            </Text>
+            <Text style={styles.text}>
+              Guest data and each signed-in account have separate records.
+            </Text>
+            <TouchableOpacity
+              accessibilityRole="button"
+              style={styles.button}
+              disabled={busy}
+              onPress={() =>
+                userAccount.isLoggedIn ? void run(signOut) : setAuth(true)
+              }
+            >
+              <Text>
+                {userAccount.isLoggedIn
+                  ? 'Sign out'
+                  : 'Sign in or create an account'}
+              </Text>
+            </TouchableOpacity>
+            {userAccount.isLoggedIn && (
+              <>
+                <TouchableOpacity
+                  style={styles.button}
+                  accessibilityRole="button"
+                  disabled={busy || isSyncing}
+                  onPress={() => void run(syncCloudNow)}
+                >
+                  <Text>{isSyncing ? 'Syncing…' : 'Sync account now'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.button}
+                  accessibilityRole="button"
+                  disabled={busy}
+                  onPress={() => void run(review)}
+                >
+                  <Text>Review pending cloud changes</Text>
+                </TouchableOpacity>
+              </>
+            )}
+            {pending
+              .filter((p) => p.conflict)
+              .map((p) => (
+                <View key={p.change.id} style={styles.conflict}>
+                  <Text style={styles.subtitle}>
+                    Conflict: {p.change.entity} · {p.change.key}
                   </Text>
-                  <Text style={styles.prefSub}>{item.desc}</Text>
+                  <Text selectable style={styles.text}>
+                    This device: {JSON.stringify(p.change.payload)}
+                  </Text>
+                  <Text selectable style={styles.text}>
+                    Cloud:{' '}
+                    {JSON.stringify(p.remote ?? 'Deleted or unavailable')}
+                  </Text>
+                  <View style={styles.row}>
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      disabled={busy}
+                      style={styles.button}
+                      onPress={() => void run(() => resolve(p.change.id, true))}
+                    >
+                      <Text>Keep my version</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      disabled={busy}
+                      style={styles.button}
+                      onPress={() =>
+                        void run(() => resolve(p.change.id, false))
+                      }
+                    >
+                      <Text>Use cloud version</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
-                {dietaryPreference === item.key && <Check size={16} color={PALETTE[950]} />}
-              </TouchableOpacity>
+              ))}
+            {pending.length > 0 && (
+              <Text style={styles.text}>
+                {pending.length} change(s) waiting to sync.
+              </Text>
+            )}
+          </View>
+          <View style={styles.card}>
+            <Text style={styles.subtitle}>Daily targets</Text>
+            {goalFields.map(([key, label]) => (
+              <View key={key} style={styles.field}>
+                <Text style={styles.label}>{label}</Text>
+                <TextInput
+                  accessibilityLabel={label}
+                  keyboardType="decimal-pad"
+                  style={styles.input}
+                  value={draft[key] ?? String(goals[key] ?? 2000)}
+                  onChangeText={(value) =>
+                    setDraft((d) => ({ ...d, [key]: value }))
+                  }
+                />
+              </View>
+            ))}
+            <TouchableOpacity
+              accessibilityRole="button"
+              style={styles.button}
+              onPress={() => {
+                if (!embedded) router.back();
+                setOnboardingVisible(true);
+              }}
+            >
+              <Text>Edit profile and recalculate targets</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.card}>
+            <Text style={styles.subtitle}>Dietary preference</Text>
+            <View style={styles.row}>
+              {prefs.map((pref) => (
+                <TouchableOpacity
+                  key={pref}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: dietaryPreference === pref }}
+                  disabled={busy}
+                  style={[
+                    styles.button,
+                    dietaryPreference === pref && styles.active,
+                  ]}
+                  onPress={() => void run(() => setDietaryPreference(pref))}
+                >
+                  <Text>{pref.replaceAll('_', ' ')}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+          <View style={styles.card}>
+            <View style={styles.header}>
+              <Text style={styles.subtitle}>Meal reminders</Text>
+              <Switch
+                accessibilityLabel="Enable reminders"
+                value={notifs.enabled}
+                onValueChange={(enabled) => setNotifs({ ...notifs, enabled })}
+              />
+            </View>
+            <Text style={styles.text}>
+              Times use your device’s local time. Reminders invite you to check
+              your log.
+            </Text>
+            {reminders.map(([toggle, time, label]) => (
+              <View key={label} style={styles.header}>
+                <Text style={styles.label}>{label}</Text>
+                <TextInput
+                  accessibilityLabel={`${label} reminder time, HH:MM`}
+                  style={[styles.input, { width: 88 }]}
+                  value={String(notifs[time])}
+                  onChangeText={(value) =>
+                    setNotifs({ ...notifs, [time]: value })
+                  }
+                  placeholder="HH:MM"
+                />
+                <Switch
+                  accessibilityLabel={`${label} reminder`}
+                  value={Boolean(notifs[toggle])}
+                  onValueChange={(enabled) =>
+                    setNotifs({ ...notifs, [toggle]: enabled })
+                  }
+                />
+              </View>
             ))}
           </View>
-        </View>
-
-        {/* Meal Reminders */}
-        <Text style={styles.sectionTitle}>RETENTION & MEAL REMINDERS</Text>
-        <View style={styles.card}>
-          <View style={styles.switchRow}>
-            <View style={styles.switchLabelGroup}>
-              <Bell size={16} color={PALETTE[950]} />
-              <View>
-                <Text style={styles.switchTitle}>Enable Push Reminders</Text>
-                <Text style={styles.switchSub}>Scheduled alerts to maintain your streak</Text>
-              </View>
-            </View>
-            <Switch
-              value={notifs.enabled}
-              onValueChange={handleToggleReminderMaster}
-              trackColor={{ false: PALETTE[100], true: PALETTE[950] }}
-              thumbColor={notifs.enabled ? PALETTE.white : PALETTE[400]}
-            />
-          </View>
-
-          {notifs.enabled && (
-            <>
-              {/* Breakfast */}
-              <View style={styles.switchRowSub}>
-                <TouchableOpacity
-                  style={styles.subItemClickable}
-                  onPress={() => handleTestMealReminder('Breakfast')}>
-                  <Text style={styles.subItemLabel}>🍳 Breakfast (08:30 AM)</Text>
-                  <Text style={styles.testTapLabel}>Tap to Test</Text>
-                </TouchableOpacity>
-                <Switch
-                  value={notifs.breakfastReminder}
-                  onValueChange={(val) => setNotifs({ ...notifs, breakfastReminder: val })}
-                  trackColor={{ false: PALETTE[100], true: PALETTE[950] }}
-                  thumbColor={notifs.breakfastReminder ? PALETTE.white : PALETTE[400]}
-                />
-              </View>
-
-              {/* Lunch */}
-              <View style={styles.switchRowSub}>
-                <TouchableOpacity
-                  style={styles.subItemClickable}
-                  onPress={() => handleTestMealReminder('Lunch')}>
-                  <Text style={styles.subItemLabel}>🥗 Lunch (01:00 PM)</Text>
-                  <Text style={styles.testTapLabel}>Tap to Test</Text>
-                </TouchableOpacity>
-                <Switch
-                  value={notifs.lunchReminder}
-                  onValueChange={(val) => setNotifs({ ...notifs, lunchReminder: val })}
-                  trackColor={{ false: PALETTE[100], true: PALETTE[950] }}
-                  thumbColor={notifs.lunchReminder ? PALETTE.white : PALETTE[400]}
-                />
-              </View>
-
-              {/* Dinner */}
-              <View style={styles.switchRowSub}>
-                <TouchableOpacity
-                  style={styles.subItemClickable}
-                  onPress={() => handleTestMealReminder('Dinner')}>
-                  <Text style={styles.subItemLabel}>🍽️ Dinner (07:30 PM)</Text>
-                  <Text style={styles.testTapLabel}>Tap to Test</Text>
-                </TouchableOpacity>
-                <Switch
-                  value={notifs.dinnerReminder}
-                  onValueChange={(val) => setNotifs({ ...notifs, dinnerReminder: val })}
-                  trackColor={{ false: PALETTE[100], true: PALETTE[950] }}
-                  thumbColor={notifs.dinnerReminder ? PALETTE.white : PALETTE[400]}
-                />
-              </View>
-
-              {/* Night Streak Check */}
-              <View style={[styles.switchRowSub, { borderBottomWidth: 0 }]}>
-                <TouchableOpacity
-                  style={styles.subItemClickable}
-                  onPress={handleTestStreakAlert}>
-                  <Text style={styles.subItemLabel}>🔥 Night Streak Check (09:30 PM)</Text>
-                  <Text style={styles.testTapLabel}>Tap to Test</Text>
-                </TouchableOpacity>
-                <Switch
-                  value={notifs.streakReminder}
-                  onValueChange={(val) => setNotifs({ ...notifs, streakReminder: val })}
-                  trackColor={{ false: PALETTE[100], true: PALETTE[950] }}
-                  thumbColor={notifs.streakReminder ? PALETTE.white : PALETTE[400]}
-                />
-              </View>
-            </>
-          )}
-        </View>
-
-        {/* Supabase Cloud Database Status */}
-        <Text style={styles.sectionTitle}>CLOUD DATABASE & MULTI-DEVICE SYNC</Text>
-        <View style={styles.card}>
-          <View style={styles.apiKeyHeader}>
-            <Database size={15} color="#059669" />
-            <Text style={styles.apiKeyLabel}>Supabase PostgreSQL Database</Text>
-          </View>
-          <Text style={styles.apiKeySub}>
-            Connected to project vzsbjffwhjikeeanrzdb. All meals, macro goals, water intake, and weight logs sync securely with Row Level Security across all your devices.
-          </Text>
-          <View style={styles.dbStatusPill}>
-            <View style={styles.dbStatusDot} />
-            <Text style={styles.dbStatusText}>Live Cloud Sync Active • 5 Tables Connected</Text>
-          </View>
-
           <TouchableOpacity
-            style={[styles.recalcBtn, { marginTop: 14, backgroundColor: PALETTE[950] }]}
-            onPress={syncCloudNow}
-            disabled={isSyncing}
-            activeOpacity={0.85}>
-            <RefreshCw size={14} color={PALETTE[50]} />
-            <Text style={styles.recalcBtnText}>
-              {isSyncing ? 'Syncing with Supabase...' : 'Sync Now with Cloud'}
+            accessibilityRole="button"
+            disabled={busy}
+            style={styles.primary}
+            onPress={() => void run(save)}
+          >
+            <Text style={styles.primaryText}>Save targets and reminders</Text>
+          </TouchableOpacity>
+          <View style={styles.card}>
+            <Text style={styles.subtitle}>Data</Text>
+            <TouchableOpacity
+              accessibilityRole="button"
+              style={styles.button}
+              disabled={busy}
+              onPress={() => void run(backup)}
+            >
+              <Text>
+                {Platform.OS === 'web'
+                  ? 'Download JSON backup'
+                  : 'Share JSON backup'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              accessibilityRole="button"
+              style={styles.button}
+              disabled={busy}
+              onPress={() => setReset(true)}
+            >
+              <Text style={{ color: JOURNAL.error }}>
+                Clear logged data for this account
+              </Text>
+            </TouchableOpacity>
+            <Text style={styles.text}>
+              Health connections and community groups are not available in this
+              build.
             </Text>
-          </TouchableOpacity>
-        </View>
-
-
-        {/* AI Vision API Key Config */}
-        <Text style={styles.sectionTitle}>GEMINI VISION API KEY</Text>
-        <View style={styles.card}>
-          <View style={styles.apiKeyHeader}>
-            <Key size={15} color={PALETTE[950]} />
-            <Text style={styles.apiKeyLabel}>Google Gemini API Key</Text>
+            <Text style={styles.text}>Cal Tracker · Version 1.1.4</Text>
           </View>
-          <Text style={styles.apiKeySub}>
-            Provides live multimodal image recognition directly through Google&apos;s Gemini Vision API.
-          </Text>
-          <TextInput
-            value={apiKey}
-            onChangeText={setApiKey}
-            placeholder="AIzaSy..."
-            placeholderTextColor={PALETTE[400]}
-            secureTextEntry
-            style={styles.apiKeyInput}
-          />
+        </ScrollView>
+      </KeyboardAvoidingView>
+      <AuthModal visible={auth} onClose={() => setAuth(false)} />
+      <Modal visible={reset} transparent onRequestClose={() => setReset(false)}>
+        <View style={styles.overlay}>
+          <View style={styles.card}>
+            <Text style={styles.subtitle}>Clear logged data?</Text>
+            <Text style={styles.text}>
+              This removes meals, weigh-ins, water logs, favorites and badges
+              for the current account. Signed-in deletions will sync to the
+              cloud. Export a backup first if you need these records.
+            </Text>
+            <View style={styles.row}>
+              <TouchableOpacity
+                accessibilityRole="button"
+                style={styles.button}
+                onPress={() => setReset(false)}
+              >
+                <Text>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                accessibilityRole="button"
+                disabled={busy}
+                style={styles.button}
+                onPress={() =>
+                  void run(async () => {
+                    await resetData();
+                    setReset(false);
+                    showToast(
+                      'Logs cleared',
+                      'Your targets and profile were kept.',
+                    );
+                  })
+                }
+              >
+                <Text style={{ color: JOURNAL.error }}>Clear data</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
-
-        {/* Data Management & Cache Optimizer */}
-        <Text style={styles.sectionTitle}>DATA & PERFORMANCE</Text>
-        <View style={styles.card}>
-          <TouchableOpacity
-            style={styles.actionLinkRow}
-            onPress={() => {
-              showToast('Data Exported 📦', `${stats.totalMealsLogged} meals & metrics synced to clipboard.`, 'sparkles');
-            }}
-            activeOpacity={0.8}>
-            <Text style={styles.actionLinkText}>Export Nutrition & Weight History (JSON)</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.actionLinkRow, { borderBottomWidth: 0 }]}
-            onPress={() => {
-              Alert.alert('Reset App Data', 'Re-seed sample nutrition meals and optimize cache?', [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Reset & Optimize',
-                  style: 'destructive',
-                  onPress: () => {
-                    showToast('Cache Cleared ⚡', 'In-memory indexes re-warmed and storage optimized.', 'sparkles');
-                  },
-                },
-              ]);
-            }}
-            activeOpacity={0.8}>
-            <Text style={[styles.actionLinkText, { color: '#DC2626' }]}>Clear Memory Cache & Re-seed Data</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Save Button */}
-        <TouchableOpacity style={styles.saveBtn} onPress={handleSaveAll} activeOpacity={0.85}>
-          <Check size={18} color={PALETTE[50]} />
-          <Text style={styles.saveBtnText}>Save Preferences</Text>
-        </TouchableOpacity>
-
-        <View style={{ height: 40 }} />
-      </ScrollView>
-
-      {/* Auth Modal for Sign In / Sign Up */}
-      <AuthModal
-        visible={isAuthModalOpen}
-        onClose={() => setIsAuthModalOpen(false)}
-        onSignIn={async (email: string, name?: string, password?: string) => {
-          await signIn(email, name, password);
-        }}
-      />
-
+      </Modal>
     </SafeAreaView>
   );
 }
-
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: PALETTE[50],
-    paddingTop: Platform.OS === 'android' ? 36 : 0,
-  },
+  page: { flex: 1, backgroundColor: PALETTE[50] },
+  body: { padding: 24, paddingBottom: 48 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: PALETTE[100],
-  },
-  headerTitle: {
-    fontFamily: FONTS.serif,
-    fontSize: 20,
-    fontWeight: '700',
-    color: PALETTE[950],
-  },
-  closeBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: PALETTE.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: PALETTE[100],
-  },
-  scrollContainer: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 14,
-  },
-  sectionTitle: {
-    fontFamily: FONTS.sans,
-    fontSize: 10,
-    fontWeight: '800',
-    color: PALETTE[600],
-    letterSpacing: 1,
-    marginBottom: 8,
-    marginTop: 8,
-  },
-  accountCard: {
-    backgroundColor: PALETTE.white,
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: PALETTE[100],
-    shadowColor: PALETTE[950],
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
-    elevation: 1,
-  },
-  accountTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 12,
-  },
-  accountAvatarBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: PALETTE[100],
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  accountNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  accountName: {
-    fontFamily: FONTS.serif,
-    fontSize: 16,
-    fontWeight: '700',
-    color: PALETTE[950],
-  },
-  tierBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    backgroundColor: PALETTE[100],
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  tierBadgeText: {
-    fontFamily: FONTS.sans,
-    fontSize: 10,
-    fontWeight: '700',
-    color: PALETTE[700],
-  },
-  guestBadge: {
-    backgroundColor: PALETTE[50],
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  guestBadgeText: {
-    fontFamily: FONTS.sans,
-    fontSize: 10,
-    fontWeight: '700',
-    color: PALETTE[400],
-  },
-  accountEmail: {
-    fontFamily: FONTS.sans,
-    fontSize: 11,
-    color: PALETTE[600],
-    marginTop: 2,
-  },
-  signInBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: PALETTE[950],
-    borderRadius: 10,
-    paddingVertical: 11,
-  },
-  signInBtnText: {
-    fontFamily: FONTS.sans,
-    fontSize: 13,
-    fontWeight: '700',
-    color: PALETTE[50],
-  },
-  signOutBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: '#FEE2E2',
-    borderRadius: 10,
-    paddingVertical: 9,
-  },
-  signOutBtnText: {
-    fontFamily: FONTS.sans,
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#DC2626',
-  },
-  switchAccountBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: PALETTE[100],
-    borderRadius: 10,
-    paddingVertical: 9,
-    borderWidth: 1,
-    borderColor: PALETTE[200],
-  },
-  switchAccountBtnText: {
-    fontFamily: FONTS.sans,
-    fontSize: 12,
-    fontWeight: '700',
-    color: PALETTE[800],
-  },
-  profileCard: {
-    backgroundColor: PALETTE.white,
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: PALETTE[100],
-    shadowColor: PALETTE[950],
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
-    elevation: 1,
-  },
-  profileTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 12,
-  },
-  profileIconBox: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: PALETTE[100],
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  profileName: {
-    fontFamily: FONTS.serif,
-    fontSize: 15,
-    fontWeight: '700',
-    color: PALETTE[950],
-  },
-  profileSub: {
-    fontFamily: FONTS.sans,
-    fontSize: 11,
-    color: PALETTE[600],
-    marginTop: 2,
-  },
-  recalcBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: PALETTE[950],
-    borderRadius: 10,
-    paddingVertical: 10,
-  },
-  recalcBtnText: {
-    fontFamily: FONTS.sans,
-    fontSize: 12,
-    fontWeight: '700',
-    color: PALETTE[50],
-  },
-  presetGrid: {
-    flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 12,
+    gap: 12,
+    marginVertical: 8,
   },
-  presetCard: {
-    width: '48%',
-    backgroundColor: PALETTE.white,
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: PALETTE[100],
-  },
-  presetHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 2,
-  },
-  presetName: {
-    fontFamily: FONTS.serif,
-    fontSize: 13,
-    fontWeight: '700',
-    color: PALETTE[950],
-  },
-  presetDesc: {
-    fontFamily: FONTS.sans,
-    fontSize: 10,
+  title: { fontFamily: FONTS.serif, fontSize: 30, color: PALETTE[950] },
+  subtitle: { fontSize: 18, fontWeight: '600', color: PALETTE[950] },
+  text: {
+    fontSize: 14,
+    lineHeight: 22,
     color: PALETTE[600],
-    marginBottom: 4,
+    marginVertical: 10,
   },
-  presetCals: {
-    fontFamily: FONTS.sans,
-    fontSize: 11,
-    fontWeight: '700',
-    color: PALETTE[600],
-  },
-  prefGrid: {
-    gap: 8,
-    marginTop: 10,
-    marginBottom: 10,
-  },
-  prefItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: PALETTE[50],
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: PALETTE[100],
-  },
-  prefItemActive: {
-    backgroundColor: PALETTE[100],
-    borderColor: PALETTE[950],
-  },
-  prefLeft: {
-    flex: 1,
-    marginRight: 8,
-  },
-  prefTitle: {
-    fontFamily: FONTS.serif,
-    fontSize: 13,
-    fontWeight: '700',
-    color: PALETTE[950],
-  },
-  prefTitleActive: {
-    color: PALETTE[950],
-  },
-  prefSub: {
-    fontFamily: FONTS.sans,
-    fontSize: 10,
-    color: PALETTE[600],
-    marginTop: 2,
-  },
+  label: { fontSize: 15, flexShrink: 1, color: PALETTE[950] },
+  row: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginVertical: 8 },
   card: {
     backgroundColor: PALETTE.white,
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: PALETTE[100],
-    shadowColor: PALETTE[950],
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
-    elevation: 1,
+    padding: 20,
+    borderRadius: 18,
+    marginVertical: 10,
   },
-  inputRow: {
+  field: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: PALETTE[50],
+    marginVertical: 8,
+    gap: 12,
   },
-  inputLabelGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  inputLabel: {
-    fontFamily: FONTS.sans,
-    fontSize: 13,
-    fontWeight: '600',
-    color: PALETTE[800],
-  },
-  inputValContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  numberInput: {
-    fontFamily: FONTS.serif,
-    fontSize: 16,
-    fontWeight: '700',
-    color: PALETTE[950],
-    padding: 0,
-    textAlign: 'right',
-    minWidth: 44,
-  },
-  unitText: {
-    fontFamily: FONTS.sans,
-    fontSize: 12,
-    color: PALETTE[400],
-    fontWeight: '600',
-  },
-  switchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: PALETTE[50],
-  },
-  switchLabelGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flex: 1,
-  },
-  switchTitle: {
-    fontFamily: FONTS.serif,
-    fontSize: 14,
-    fontWeight: '700',
-    color: PALETTE[950],
-  },
-  switchSub: {
-    fontFamily: FONTS.sans,
-    fontSize: 11,
-    color: PALETTE[600],
-    marginTop: 1,
-  },
-  switchRowSub: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: PALETTE[50],
-  },
-  subItemClickable: {
-    flex: 1,
-  },
-  subItemLabel: {
-    fontFamily: FONTS.sans,
-    fontSize: 12,
-    color: PALETTE[800],
-    fontWeight: '600',
-  },
-  testTapLabel: {
-    fontFamily: FONTS.sans,
-    fontSize: 10,
-    fontWeight: '700',
-    color: PALETTE[600],
-    marginTop: 1,
-  },
-  apiKeyHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 6,
-    marginBottom: 4,
-  },
-  apiKeyLabel: {
-    fontFamily: FONTS.serif,
-    fontSize: 14,
-    fontWeight: '700',
-    color: PALETTE[950],
-  },
-  apiKeySub: {
-    fontFamily: FONTS.sans,
-    fontSize: 11,
-    color: PALETTE[600],
-    lineHeight: 15,
-    marginBottom: 8,
-  },
-  apiKeyInput: {
+  input: {
+    width: 100,
+    minHeight: 48,
     backgroundColor: PALETTE[50],
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    color: PALETTE[950],
-    fontFamily: FONTS.sans,
-    fontSize: 13,
-    borderWidth: 1,
-    borderColor: PALETTE[200],
-    marginBottom: 8,
-  },
-  dbStatusPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#ECFDF5',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#A7F3D0',
-    marginTop: 4,
-    marginBottom: 4,
-  },
-  dbStatusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#10B981',
-  },
-  dbStatusText: {
-    fontFamily: FONTS.sans,
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#065F46',
-  },
-  actionLinkRow: {
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: PALETTE[50],
-  },
-  actionLinkText: {
-    fontFamily: FONTS.sans,
-    fontSize: 13,
-    fontWeight: '600',
-    color: PALETTE[950],
-  },
-  saveBtn: {
-    backgroundColor: PALETTE[950],
+    padding: 12,
     borderRadius: 12,
-    paddingVertical: 14,
-    flexDirection: 'row',
+    fontSize: 16,
+  },
+  button: {
+    minHeight: 44,
+    minWidth: 44,
+    padding: 12,
+    justifyContent: 'center',
+    backgroundColor: PALETTE[100],
+    borderRadius: 12,
+    marginVertical: 4,
+  },
+  active: { backgroundColor: PALETTE[300] },
+  primary: {
+    minHeight: 48,
+    backgroundColor: PALETTE[900],
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    marginTop: 6,
+    borderRadius: 14,
+    marginVertical: 12,
   },
-  saveBtnText: {
-    fontFamily: FONTS.sans,
-    fontSize: 14,
-    fontWeight: '700',
-    color: PALETTE[50],
+  primaryText: { fontSize: 16, color: 'white' },
+  error: { fontSize: 14, color: JOURNAL.error, lineHeight: 21 },
+  overlay: {
+    flex: 1,
+    backgroundColor: JOURNAL.scrim,
+    padding: 24,
+    justifyContent: 'center',
   },
-  waterHelpContainer: {
-    backgroundColor: '#F0F9FF',
-    borderRadius: 8,
-    padding: 10,
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: '#BAE6FD',
-  },
-  waterHelpText: {
-    fontFamily: FONTS.sans,
-    fontSize: 11.5,
-    color: '#0369A1',
-    lineHeight: 16,
-  },
-  waterResetBtn: {
-    alignSelf: 'flex-start',
-    marginTop: 6,
-    backgroundColor: '#0284C7',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  waterResetBtnText: {
-    fontFamily: FONTS.sans,
-    fontSize: 11,
-    fontWeight: '700',
-    color: PALETTE.white,
+  conflict: {
+    padding: 12,
+    backgroundColor: PALETTE[50],
+    borderRadius: 12,
+    marginVertical: 12,
   },
 });
+
+export default SettingsScreen;

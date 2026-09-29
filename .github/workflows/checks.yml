@@ -1,0 +1,22 @@
+name: Project checks
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: deno check supabase/functions/nutrition-analysis/index.ts
+      - run: npm test
+      - run: npm run typecheck
+      - run: npx eslint src --no-cache --max-warnings 0
+      - run: npx expo export --platform web
+        env:
+          EXPO_OFFLINE: 1

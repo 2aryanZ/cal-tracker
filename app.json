@@ -1,40 +1,38 @@
 {
   "expo": {
-    "name": "Cal AI - Calorie Tracker",
+    "name": "Cal Tracker",
     "slug": "cal-tracker",
     "version": "1.1.4",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "caltracker",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "light",
     "ios": {
       "bundleIdentifier": "com.caltracker.app",
       "buildNumber": "7",
       "supportsTablet": true,
       "infoPlist": {
-        "NSCameraUsageDescription": "Cal AI uses your camera to scan meals, recognize food items, and calculate calories and macronutrients.",
-        "NSPhotoLibraryUsageDescription": "Cal AI accesses your photo library to let you select meal photos for AI nutrition breakdown.",
-        "NSMicrophoneUsageDescription": "Cal AI may use the microphone during meal recording sessions.",
+        "NSCameraUsageDescription": "Cal Tracker uses your camera to scan meals, recognize food items, and calculate calories and macronutrients.",
+        "NSPhotoLibraryUsageDescription": "Cal Tracker accesses your photo library to let you select meal photos for AI nutrition breakdown.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "package": "com.caltracker.app",
       "versionCode": 7,
-
-
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundColor": "#052e16"
       },
       "permissions": [
         "android.permission.CAMERA",
-        "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE",
-        "android.permission.NOTIFICATIONS",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.POST_NOTIFICATIONS"
       ],
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ]
     },
     "web": {
       "output": "static",
@@ -55,13 +53,16 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Cal AI to access your camera to scan and identify meals."
+          "cameraPermission": "Allow Cal Tracker to access your camera to scan and identify meals.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow Cal AI to access your photos to analyze nutrition in saved meal pictures."
+          "photosPermission": "Allow Cal Tracker to access your photos to analyze nutrition in saved meal pictures.",
+          "microphonePermission": false
         }
       ],
       [

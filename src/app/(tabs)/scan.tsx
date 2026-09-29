@@ -1,10 +1,10 @@
-import React, { useState, useRef } from 'react';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   ActivityIndicator,
   Platform,
   Alert,
@@ -12,7 +12,12 @@ import {
 import { Image } from 'expo-image';
 import { CameraView, useCameraPermissions, CameraType } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
-import { useRouter } from 'expo-router';
+import {
+  useRouter,
+  useLocalSearchParams,
+  usePathname,
+  useFocusEffect,
+} from 'expo-router';
 
 import {
   X,
@@ -25,64 +30,159 @@ import {
   Camera as CameraIcon,
   Flame,
 } from 'lucide-react-native';
-import { analyzeFoodImage, analyzeNutritionLabelImage } from '@/services/aiFoodService';
+import {
+  analyzeFoodImage,
+  analyzeNutritionLabelImage,
+} from '@/services/aiFoodService';
 import { fetchProductByBarcode } from '@/services/barcodeService';
 import { MealResultModal } from '@/components/MealResultModal';
 import { useNutrition } from '@/context/NutritionContext';
-import { AiFoodDetectionResult } from '@/types/nutrition';
-import { PALETTE, FONTS } from '@/constants/theme';
-import { triggerLightImpact, triggerSelection, triggerSuccessFeedback } from '@/services/hapticsService';
-import { playGoalChime } from '@/services/soundService';
-
-const FALLBACK_FOOD_IMAGE =
-  'https://images.unsplash.com/photo-1540420773420-3366772f4999?w=350&q=75&auto=format&fit=crop';
+import { AiFoodDetectionResult, MealType, FoodEntry } from '@/types/nutrition';
+import { PALETTE, FONTS, JOURNAL } from '@/constants/theme';
+import {
+  triggerLightImpact,
+  triggerSelection,
+  triggerSuccessFeedback,
+} from '@/services/hapticsService';
 
 export default function ScanScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ mode?: string; mealType?: string }>();
+  const isFocused = usePathname().endsWith('/scan');
+  const request = useRef<AbortController | null>(null);
+  const scanGeneration = useRef(0);
+  useEffect(
+    () => () => {
+      request.current?.abort();
+    },
+    [],
+  );
+  useEffect(() => {
+    if (!isFocused) request.current?.abort();
+  }, [isFocused]);
   const { logMeal } = useNutrition();
 
   // Camera permissions & ref
   const [permission, requestPermission] = useCameraPermissions();
-  const cameraRef = useRef<any>(null);
+  const cameraRef = useRef<CameraView>(null);
 
   const [facing, setFacing] = useState<CameraType>('back');
   const [torch, setTorch] = useState(false);
-  const [selectedImage, setSelectedImage] = useState<string>(FALLBACK_FOOD_IMAGE);
+  const [selectedImage, setSelectedImage] = useState<string>('');
   const [isScanning, setIsScanning] = useState(false);
-  const [zoomLevel, setZoomLevel] = useState<'0.5x' | '1x'>('1x');
-  const [scanMode, setScanMode] = useState<'food' | 'barcode' | 'label'>('food');
-  const [scanResult, setScanResult] = useState<AiFoodDetectionResult | null>(null);
+  const [zoomLevel, setZoomLevel] = useState<'2x' | '1x'>('1x');
+  const [scanMode, setScanMode] = useState<'food' | 'barcode' | 'label'>(
+    params.mode === 'barcode'
+      ? 'barcode'
+      : params.mode === 'label'
+        ? 'label'
+        : 'food',
+  );
+  const [scanResult, setScanResult] = useState<AiFoodDetectionResult | null>(
+    null,
+  );
   const [resultModalVisible, setResultModalVisible] = useState(false);
+  const [resultSource, setResultSource] =
+    useState<FoodEntry['source']>('photo');
+  const mealType: MealType = ['breakfast', 'lunch', 'dinner', 'snack'].includes(
+    params.mealType ?? '',
+  )
+    ? (params.mealType as MealType)
+    : 'lunch';
 
   // Debounce ref for barcode scanning to prevent multi-trigger
   const lastScannedBarcodeRef = useRef<string | null>(null);
   const isBarcodeLockedRef = useRef(false);
 
-  const processImage = async (imageUri: string, base64?: string) => {
+  useFocusEffect(
+    useCallback(() => {
+      setScanMode(
+        params.mode === 'barcode'
+          ? 'barcode'
+          : params.mode === 'label'
+            ? 'label'
+            : 'food',
+      );
+      setScanResult(null);
+      setResultModalVisible(false);
+      isBarcodeLockedRef.current = false;
+      lastScannedBarcodeRef.current = null;
+      return () => {
+        scanGeneration.current++;
+        request.current?.abort();
+      };
+    }, [params.mode]),
+  );
+  const chooseMode = (mode: 'food' | 'barcode' | 'label') => {
+    request.current?.abort();
+    scanGeneration.current++;
+    setIsScanning(false);
+    setScanResult(null);
+    setScanMode(mode);
+    isBarcodeLockedRef.current = false;
+    lastScannedBarcodeRef.current = null;
+  };
+
+  const processImage = async (
+    imageUri: string,
+    base64?: string,
+    mimeType?: string,
+  ) => {
+    const generation = ++scanGeneration.current;
+    request.current?.abort();
+    const controller = new AbortController();
+    request.current = controller;
     setSelectedImage(imageUri);
     setIsScanning(true);
 
     try {
       let result: AiFoodDetectionResult;
-      if (scanMode === 'label') {
-        result = await analyzeNutritionLabelImage(imageUri, base64);
+      if (scanMode === 'label' || scanMode === 'barcode') {
+        result = await analyzeNutritionLabelImage(
+          imageUri,
+          base64,
+          mimeType,
+          controller.signal,
+        );
       } else {
-        result = await analyzeFoodImage(imageUri, base64);
+        result = await analyzeFoodImage(
+          imageUri,
+          base64,
+          mimeType,
+          controller.signal,
+        );
       }
+      if (controller.signal.aborted || generation !== scanGeneration.current)
+        return;
       triggerSuccessFeedback();
+      setResultSource(scanMode === 'food' ? 'photo' : 'label');
       setScanResult(result);
       setResultModalVisible(true);
     } catch (err) {
       console.error('Scan error:', err);
-      Alert.alert('Scan Failed', 'Could not analyze food image. Please try again.');
+      if (!controller.signal.aborted)
+        Alert.alert(
+          'Scan failed',
+          err instanceof Error ? err.message : 'Please try again.',
+        );
     } finally {
-      setIsScanning(false);
+      if (generation === scanGeneration.current) setIsScanning(false);
     }
   };
 
-  const handleBarcodeScanned = async (event: { data: string; type: string }) => {
+  const handleBarcodeScanned = async (event: {
+    data: string;
+    type: string;
+  }) => {
     const rawCode = event?.data;
-    if (!rawCode || isScanning || isBarcodeLockedRef.current) return;
+    if (
+      !rawCode ||
+      !isFocused ||
+      resultModalVisible ||
+      isScanning ||
+      isBarcodeLockedRef.current
+    )
+      return;
     if (lastScannedBarcodeRef.current === rawCode) return;
 
     lastScannedBarcodeRef.current = rawCode;
@@ -90,32 +190,36 @@ export default function ScanScreen() {
     setIsScanning(true);
 
     triggerSuccessFeedback();
-    playGoalChime();
 
     try {
-      const product = await fetchProductByBarcode(rawCode);
+      setSelectedImage('');
+      const controller = new AbortController();
+      request.current = controller;
+      const product = await fetchProductByBarcode(rawCode, controller.signal);
+      if (controller.signal.aborted) return;
       if (product) {
+        setResultSource('barcode');
         setScanResult(product);
         setResultModalVisible(true);
       } else {
         Alert.alert(
           'Barcode Not Found',
-          `Could not find product for barcode ${rawCode}. You can try scanning the Nutrition Facts label.`
+          `Could not find product for barcode ${rawCode}. You can try scanning the Nutrition Facts label.`,
         );
       }
     } catch (err) {
       console.warn('Barcode scan error:', err);
-      Alert.alert('Barcode Lookup Error', 'Could not fetch barcode information. Please try again.');
+      Alert.alert(
+        'Barcode Lookup Error',
+        'Could not fetch barcode information. Please try again.',
+      );
     } finally {
       setIsScanning(false);
-      setTimeout(() => {
-        isBarcodeLockedRef.current = false;
-        lastScannedBarcodeRef.current = null;
-      }, 2500);
     }
   };
 
   const handleCapture = async () => {
+    if (scanMode === 'barcode' || isScanning || resultModalVisible) return;
     // If live camera view is active and granted
     if (cameraRef.current && permission?.granted) {
       try {
@@ -131,7 +235,10 @@ export default function ScanScreen() {
         }
       } catch (err) {
         console.warn('Camera takePicture error:', err);
-        Alert.alert('Camera Error', 'Could not capture photo. Please try again.');
+        Alert.alert(
+          'Camera Error',
+          'Could not capture photo. Please try again.',
+        );
       } finally {
         setIsScanning(false);
       }
@@ -147,14 +254,14 @@ export default function ScanScreen() {
         if (!p.granted) {
           Alert.alert(
             'Camera Permission Required',
-            'Please allow camera access in device settings to scan your food live.'
+            'Please allow camera access in device settings to scan your food live.',
           );
           return;
         }
       } else {
         Alert.alert(
           'Camera Permission Required',
-          'Please allow camera access in device settings to scan your food live.'
+          'Please allow camera access in device settings to scan your food live.',
         );
         return;
       }
@@ -169,7 +276,11 @@ export default function ScanScreen() {
       });
 
       if (!result.canceled && result.assets?.[0]) {
-        await processImage(result.assets[0].uri, result.assets[0].base64 || undefined);
+        await processImage(
+          result.assets[0].uri,
+          result.assets[0].base64 || undefined,
+          result.assets[0].mimeType,
+        );
       }
     } catch (e) {
       console.warn('Camera launch error:', e);
@@ -178,11 +289,12 @@ export default function ScanScreen() {
 
   const handlePickGallery = async () => {
     try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      const { status } =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert(
           'Photo Library Access Required',
-          'Please allow photo library access in your device settings to select food images.'
+          'Please allow photo library access in your device settings to select food images.',
         );
         return;
       }
@@ -196,7 +308,11 @@ export default function ScanScreen() {
       });
 
       if (!result.canceled && result.assets?.[0]) {
-        await processImage(result.assets[0].uri, result.assets[0].base64 || undefined);
+        await processImage(
+          result.assets[0].uri,
+          result.assets[0].base64 || undefined,
+          result.assets[0].mimeType,
+        );
       }
     } catch (e) {
       console.warn('Gallery pick error:', e);
@@ -212,41 +328,54 @@ export default function ScanScreen() {
     <SafeAreaView style={styles.safeArea}>
       {/* Top Header Bar */}
       <View style={styles.topBar}>
-        <TouchableOpacity style={styles.topBtn} onPress={() => router.back()}>
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Close scanner"
+          style={styles.topBtn}
+          onPress={() =>
+            router.canGoBack() ? router.back() : router.replace('/(tabs)')
+          }
+        >
           <X size={18} color={PALETTE[50]} />
         </TouchableOpacity>
 
         <View style={styles.logoCenter}>
           <View style={styles.fitnessBadge}>
-            <Flame size={13} color="#10B981" fill="#10B981" />
+            <Flame size={13} color={JOURNAL.accent} />
           </View>
           <Text style={styles.topTitle}>
             {scanMode === 'barcode'
               ? 'Barcode Scanner'
               : scanMode === 'label'
-              ? 'Nutrition Label OCR'
-              : 'Cal Tracker Vision'}
+                ? 'Nutrition label'
+                : 'Food scanner'}
           </Text>
         </View>
 
-        <TouchableOpacity style={styles.topBtn} onPress={toggleCameraFacing}>
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Switch camera"
+          style={styles.topBtn}
+          onPress={toggleCameraFacing}
+        >
           <SwitchCamera size={18} color={PALETTE[50]} />
         </TouchableOpacity>
       </View>
 
       {/* Main Viewfinder Frame */}
       <View style={styles.viewfinderContainer}>
-        {permission?.granted ? (
+        {permission?.granted && isFocused ? (
           <CameraView
             ref={cameraRef}
             style={StyleSheet.absoluteFill}
             facing={facing}
+            active={isFocused && !resultModalVisible}
+            zoom={zoomLevel === '2x' ? 0.25 : 0}
             enableTorch={torch}
             barcodeScannerSettings={
               scanMode === 'barcode'
                 ? {
                     barcodeTypes: [
-                      'qr',
                       'ean13',
                       'ean8',
                       'upc_a',
@@ -261,27 +390,40 @@ export default function ScanScreen() {
                   }
                 : undefined
             }
-            onBarcodeScanned={scanMode === 'barcode' && !isScanning ? handleBarcodeScanned : undefined}
+            onBarcodeScanned={
+              scanMode === 'barcode' &&
+              isFocused &&
+              !resultModalVisible &&
+              !isScanning
+                ? handleBarcodeScanned
+                : undefined
+            }
           />
         ) : (
           <View style={styles.permissionFallback}>
-            <Image
-              source={{ uri: selectedImage }}
-              style={StyleSheet.absoluteFill}
-              cachePolicy="memory-disk"
-              transition={150}
-            />
+            {selectedImage ? (
+              <Image
+                source={{ uri: selectedImage }}
+                style={StyleSheet.absoluteFill}
+                cachePolicy="memory-disk"
+              />
+            ) : null}
             <View style={styles.permissionPrompt}>
               <CameraIcon size={32} color={PALETTE[50]} />
               <Text style={styles.permissionTitle}>Camera Access Required</Text>
               <Text style={styles.permissionSub}>
-                Enable camera to scan barcodes and snap food photos for instant nutrition facts
+                Enable your camera for barcodes and food photos. Review
+                estimates before logging.
               </Text>
               <TouchableOpacity
+                accessibilityRole="button"
                 style={styles.grantPermissionBtn}
                 onPress={requestPermission}
-                activeOpacity={0.85}>
-                <Text style={styles.grantPermissionBtnText}>Allow Camera Access</Text>
+                activeOpacity={0.85}
+              >
+                <Text style={styles.grantPermissionBtnText}>
+                  Allow Camera Access
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -290,7 +432,7 @@ export default function ScanScreen() {
         {/* Scan Mode Overlays & Reticles */}
         {scanMode === 'food' && (
           <View style={[styles.aiPin, styles.pinLettuce]}>
-            <Text style={styles.pinText}>Visual AI Vision</Text>
+            <Text style={styles.pinText}>Food photo</Text>
             <View style={styles.pinDot} />
           </View>
         )}
@@ -305,7 +447,9 @@ export default function ScanScreen() {
               <View style={[styles.cornerBracket, styles.cornerBottomRight]} />
               <View style={styles.laserLine} />
             </View>
-            <Text style={styles.reticleInstructionText}>Align barcode within the frame</Text>
+            <Text style={styles.reticleInstructionText}>
+              Align barcode within the frame
+            </Text>
           </View>
         )}
 
@@ -318,27 +462,53 @@ export default function ScanScreen() {
               <View style={[styles.cornerBracket, styles.cornerBottomLeft]} />
               <View style={[styles.cornerBracket, styles.cornerBottomRight]} />
             </View>
-            <Text style={styles.reticleInstructionText}>Position Nutrition Facts label in frame</Text>
+            <Text style={styles.reticleInstructionText}>
+              Position Nutrition Facts label in frame
+            </Text>
           </View>
         )}
 
         {/* Zoom Selector Pills (.5x, 1x) */}
         <View style={styles.zoomRow}>
           <TouchableOpacity
-            style={[styles.zoomPill, zoomLevel === '0.5x' && styles.zoomPillActive]}
+            accessibilityRole="button"
+            style={[
+              styles.zoomPill,
+              zoomLevel === '2x' && styles.zoomPillActive,
+            ]}
             onPress={() => {
               triggerSelection();
-              setZoomLevel('0.5x');
-            }}>
-            <Text style={[styles.zoomText, zoomLevel === '0.5x' && styles.zoomTextActive]}>.5x</Text>
+              setZoomLevel('2x');
+            }}
+          >
+            <Text
+              style={[
+                styles.zoomText,
+                zoomLevel === '2x' && styles.zoomTextActive,
+              ]}
+            >
+              2x
+            </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.zoomPill, zoomLevel === '1x' && styles.zoomPillActive]}
+            accessibilityRole="button"
+            style={[
+              styles.zoomPill,
+              zoomLevel === '1x' && styles.zoomPillActive,
+            ]}
             onPress={() => {
               triggerSelection();
               setZoomLevel('1x');
-            }}>
-            <Text style={[styles.zoomText, zoomLevel === '1x' && styles.zoomTextActive]}>1x</Text>
+            }}
+          >
+            <Text
+              style={[
+                styles.zoomText,
+                zoomLevel === '1x' && styles.zoomTextActive,
+              ]}
+            >
+              1x
+            </Text>
           </TouchableOpacity>
         </View>
 
@@ -347,37 +517,76 @@ export default function ScanScreen() {
           {/* Mode Selector Tabs (Scan Food, Barcode, Food Label) */}
           <View style={styles.modeTabsRow}>
             <TouchableOpacity
-              style={[styles.modeTab, scanMode === 'food' && styles.modeTabActive]}
+              accessibilityRole="button"
+              style={[
+                styles.modeTab,
+                scanMode === 'food' && styles.modeTabActive,
+              ]}
               onPress={() => {
                 triggerSelection();
-                setScanMode('food');
-              }}>
-              <Scan size={13} color={scanMode === 'food' ? PALETTE[950] : PALETTE[300]} />
-              <Text style={[styles.modeTabText, scanMode === 'food' && styles.modeTabTextActive]}>
+                chooseMode('food');
+              }}
+            >
+              <Scan
+                size={13}
+                color={scanMode === 'food' ? PALETTE[950] : PALETTE[300]}
+              />
+              <Text
+                style={[
+                  styles.modeTabText,
+                  scanMode === 'food' && styles.modeTabTextActive,
+                ]}
+              >
                 Scan Food
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.modeTab, scanMode === 'barcode' && styles.modeTabActive]}
+              accessibilityRole="button"
+              style={[
+                styles.modeTab,
+                scanMode === 'barcode' && styles.modeTabActive,
+              ]}
               onPress={() => {
                 triggerSelection();
-                setScanMode('barcode');
-              }}>
-              <QrCode size={13} color={scanMode === 'barcode' ? PALETTE[950] : PALETTE[300]} />
-              <Text style={[styles.modeTabText, scanMode === 'barcode' && styles.modeTabTextActive]}>
+                chooseMode('barcode');
+              }}
+            >
+              <QrCode
+                size={13}
+                color={scanMode === 'barcode' ? PALETTE[950] : PALETTE[300]}
+              />
+              <Text
+                style={[
+                  styles.modeTabText,
+                  scanMode === 'barcode' && styles.modeTabTextActive,
+                ]}
+              >
                 Barcode
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.modeTab, scanMode === 'label' && styles.modeTabActive]}
+              accessibilityRole="button"
+              style={[
+                styles.modeTab,
+                scanMode === 'label' && styles.modeTabActive,
+              ]}
               onPress={() => {
                 triggerSelection();
-                setScanMode('label');
-              }}>
-              <Tag size={13} color={scanMode === 'label' ? PALETTE[950] : PALETTE[300]} />
-              <Text style={[styles.modeTabText, scanMode === 'label' && styles.modeTabTextActive]}>
+                chooseMode('label');
+              }}
+            >
+              <Tag
+                size={13}
+                color={scanMode === 'label' ? PALETTE[950] : PALETTE[300]}
+              />
+              <Text
+                style={[
+                  styles.modeTabText,
+                  scanMode === 'label' && styles.modeTabTextActive,
+                ]}
+              >
                 Food Label
               </Text>
             </TouchableOpacity>
@@ -386,30 +595,43 @@ export default function ScanScreen() {
           {/* Shutter Button Row */}
           <View style={styles.shutterRow}>
             <TouchableOpacity
-              style={[styles.shutterSideBtn, torch && styles.shutterSideBtnActive]}
+              accessibilityRole="button"
+              style={[
+                styles.shutterSideBtn,
+                torch && styles.shutterSideBtnActive,
+              ]}
               onPress={() => {
                 triggerLightImpact();
                 setTorch(!torch);
-              }}>
+              }}
+            >
               <Zap size={20} color={torch ? PALETTE[950] : PALETTE[50]} />
             </TouchableOpacity>
 
             <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Take meal photo"
               style={styles.shutterOuter}
               onPress={handleCapture}
-              disabled={isScanning}
-              activeOpacity={0.85}>
+              disabled={scanMode === 'barcode' || isScanning}
+              activeOpacity={0.85}
+            >
               <View style={styles.shutterInner}>
-                {isScanning && <ActivityIndicator size="small" color={PALETTE[950]} />}
+                {isScanning && (
+                  <ActivityIndicator size="small" color={PALETTE[950]} />
+                )}
               </View>
             </TouchableOpacity>
 
             <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Choose photo from library"
               style={styles.shutterSideBtn}
               onPress={() => {
                 triggerLightImpact();
                 handlePickGallery();
-              }}>
+              }}
+            >
               <ImageIcon size={20} color={PALETTE[50]} />
             </TouchableOpacity>
           </View>
@@ -419,11 +641,25 @@ export default function ScanScreen() {
       {/* Result & Breakdown Modal */}
       <MealResultModal
         visible={resultModalVisible}
-        onClose={() => setResultModalVisible(false)}
+        onClose={() => {
+          setResultModalVisible(false);
+          setScanResult(null);
+          isBarcodeLockedRef.current = false;
+          lastScannedBarcodeRef.current = null;
+        }}
         result={scanResult}
+        nutritionSource={resultSource}
+        defaultMealType={mealType}
+        sourceLabel={
+          resultSource === 'barcode'
+            ? 'Barcode values · review the portion'
+            : resultSource === 'label'
+              ? 'Label reading · review the recognized values'
+              : 'Photo estimate · review and adjust the values'
+        }
         imageUri={selectedImage}
-        onConfirm={(item) => {
-          logMeal({
+        onConfirm={async (item) => {
+          await logMeal({
             name: item.name,
             calories: item.calories,
             protein: item.protein,
@@ -432,7 +668,9 @@ export default function ScanScreen() {
             mealType: item.mealType,
             portionSize: item.portionSize,
             imageUri: item.imageUri,
-            isAiGenerated: true,
+            isAiGenerated: resultSource !== 'barcode',
+            source: resultSource,
+            ingredients: item.ingredients,
           });
           router.replace('/(tabs)');
         }}
@@ -440,7 +678,6 @@ export default function ScanScreen() {
     </SafeAreaView>
   );
 }
-
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -552,7 +789,7 @@ const styles = StyleSheet.create({
   },
   pinText: {
     fontFamily: FONTS.serif,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: PALETTE[950],
   },
@@ -571,14 +808,15 @@ const styles = StyleSheet.create({
     bottom: 124,
     alignSelf: 'center',
     flexDirection: 'row',
-    backgroundColor: 'rgba(16, 33, 35, 0.65)',
+    backgroundColor: JOURNAL.scrim,
     borderRadius: 14,
     padding: 3,
     gap: 4,
   },
   zoomPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 3,
+    paddingHorizontal: 16,
+    minHeight: 48,
+    justifyContent: 'center',
     borderRadius: 10,
   },
   zoomPillActive: {
@@ -586,7 +824,7 @@ const styles = StyleSheet.create({
   },
   zoomText: {
     fontFamily: FONTS.sans,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: PALETTE[200],
   },
@@ -625,7 +863,7 @@ const styles = StyleSheet.create({
   },
   modeTabText: {
     fontFamily: FONTS.sans,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     color: PALETTE[300],
   },
@@ -744,4 +982,3 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
 });
-

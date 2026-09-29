@@ -46,7 +46,7 @@ export const MacroMiniCard = React.memo(function MacroMiniCard({
   const center = size / 2;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
-  const progress = Math.min(Math.max(consumed / (target || 1), 0), 1);
+  const progress = Math.min(Math.max(target>0?consumed / target:0, 0), 1);
   const strokeDashoffset = circumference - progress * circumference;
 
   return (
@@ -57,7 +57,7 @@ export const MacroMiniCard = React.memo(function MacroMiniCard({
           <Text style={styles.target}>/{target}g</Text>
         </Text>
         <View style={styles.pctBadge}>
-          <Text style={styles.pctText}>{Math.round(progress * 100)}%</Text>
+          <Text style={styles.pctText}>{target>0?`${Math.round(consumed/target*100)}%`:'No target'}</Text>
         </View>
         <Text style={styles.sublabel}>{cfg.sub}</Text>
       </View>
@@ -125,13 +125,13 @@ const styles = StyleSheet.create({
   },
   target: {
     fontFamily: FONTS.sans,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '500',
     color: PALETTE[400],
   },
   sublabel: {
     fontFamily: FONTS.sans,
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '500',
     color: PALETTE[600],
     marginTop: 1,
@@ -148,7 +148,7 @@ const styles = StyleSheet.create({
   },
   pctText: {
     fontFamily: FONTS.sans,
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '700',
     color: PALETTE[700],
   },

@@ -86,7 +86,7 @@ export const AiCoachCard = React.memo(function AiCoachCard({ onActionPress, onOp
           </View>
           <View>
             <Text style={styles.greetingText}>{insight.greeting}</Text>
-            <Text style={styles.coachTitleText}>Personalized AI Coach</Text>
+            <Text style={styles.coachTitleText}>Daily summary</Text>
           </View>
         </View>
 
@@ -119,15 +119,15 @@ export const AiCoachCard = React.memo(function AiCoachCard({ onActionPress, onOp
         <View style={styles.paceItem}>
           <Text style={styles.paceLabel}>CALORIE BUDGET</Text>
           <Text style={styles.paceVal}>
-            {insight.macroPace.calorieRemaining} kcal{' '}
-            <Text style={styles.paceSub}>left</Text>
+            {Math.abs(insight.macroPace.calorieRemaining)} kcal{' '}
+            <Text style={styles.paceSub}>{insight.macroPace.calorieRemaining<0?'above target':'left'}</Text>
           </Text>
         </View>
       </View>
 
       {/* Action Recommendation Button */}
       {insight.recommendation ? (
-        <TouchableOpacity
+        <TouchableOpacity accessibilityRole="button"
           style={styles.actionBtn}
           onPress={handleAction}
           activeOpacity={0.85}>
@@ -179,7 +179,7 @@ const styles = StyleSheet.create({
   },
   greetingText: {
     fontFamily: FONTS.sans,
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
     color: PALETTE[600],
     textTransform: 'uppercase',
@@ -204,7 +204,7 @@ const styles = StyleSheet.create({
   },
   badgeText: {
     fontFamily: FONTS.sans,
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
     color: PALETTE[800],
   },
@@ -238,7 +238,7 @@ const styles = StyleSheet.create({
   },
   paceLabel: {
     fontFamily: FONTS.sans,
-    fontSize: 8,
+    fontSize: 12,
     fontWeight: '800',
     color: PALETTE[500],
     letterSpacing: 0.6,
@@ -252,7 +252,7 @@ const styles = StyleSheet.create({
   },
   paceSub: {
     fontFamily: FONTS.sans,
-    fontSize: 10,
+    fontSize: 12,
     color: PALETTE[600],
     fontWeight: '500',
   },
@@ -286,7 +286,7 @@ const styles = StyleSheet.create({
   },
   actionBtnText: {
     fontFamily: FONTS.sans,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: PALETTE[50],
   },

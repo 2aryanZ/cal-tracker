@@ -1,18 +1,17 @@
 import { Platform } from 'react-native';
 
+// Everyday food journal: warm paper, charcoal type and a restrained olive accent.
+export const JOURNAL = {
+  paper: '#F7F4EC', surface: '#FFFDF8', ink: '#252923', muted: '#626757',
+  accent: '#667A45', accentText: '#4D6034', line: '#DEDDD1', soft: '#E9EDDE', water: '#386779',
+  error: '#A44331', canvas: '#EAE7DE', scrim: 'rgba(37,41,35,0.55)',
+};
+// Keep shared legacy components on the same palette while they migrate to semantic tokens.
 export const PALETTE = {
-  50: '#F4F9F8',
-  100: '#DAEDEB',
-  200: '#B4DBD8',
-  300: '#88C2BF',
-  400: '#5EA3A2',
-  500: '#448888',
-  600: '#346C6D',
-  700: '#2D5758',
-  800: '#274748',
-  900: '#243C3D',
-  950: '#102123',
-  white: '#FFFFFF',
+  50: JOURNAL.paper, 100: JOURNAL.soft, 200: JOURNAL.line, 300: '#BAC8A3',
+  400: JOURNAL.muted, 500: JOURNAL.accent, 600: JOURNAL.muted,
+  700: '#4D6034', 800: '#3B482F', 900: JOURNAL.ink, 950: JOURNAL.ink,
+  white: JOURNAL.surface,
 };
 
 export const FONTS = {

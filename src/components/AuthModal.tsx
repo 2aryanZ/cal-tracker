@@ -1,3 +1,4 @@
+import {SafeAreaView} from 'react-native-safe-area-context';
 import React, { useState } from 'react';
 import {
   View,
@@ -7,7 +8,6 @@ import {
   TouchableOpacity,
   TextInput,
   ScrollView,
-  SafeAreaView,
   Platform,
   ActivityIndicator,
 } from 'react-native';
@@ -29,20 +29,16 @@ import { triggerLightImpact, triggerSuccessFeedback } from '@/services/hapticsSe
 interface AuthModalProps {
   visible: boolean;
   onClose: () => void;
-  onSignIn?: (email: string, name?: string, password?: string) => void | Promise<void>;
   initialStep?: 1 | 2 | 3;
 }
 
 export function AuthModal({
   visible,
   onClose,
-  onSignIn,
 }: AuthModalProps) {
-  const { signIn } = useNutrition();
+  const { signIn, signInWithGoogle } = useNutrition();
 
   const [authMethod, setAuthMethod] = useState<'google' | 'email'>('google');
-  const [googleEmail, setGoogleEmail] = useState('');
-  const [googleName, setGoogleName] = useState('');
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -53,67 +49,43 @@ export function AuthModal({
   const [loadingProvider, setLoadingProvider] = useState<'email' | 'google' | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Fast-Track Google Authentication (Direct Supabase connection without broken localhost redirects)
   const handleGoogleConnect = async () => {
     setErrorMessage(null);
-    const targetEmail = googleEmail.trim().toLowerCase();
-    if (!targetEmail || !targetEmail.includes('@') || !targetEmail.includes('.')) {
-      setErrorMessage('Please enter your Google email address (e.g. jordan.fitness@gmail.com) to continue.');
-      return;
-    }
-
     setIsSubmitting(true);
     setLoadingProvider('google');
-    triggerLightImpact();
-
     try {
-      const displayName = googleName.trim() || targetEmail.split('@')[0];
-      if (onSignIn) {
-        await onSignIn(targetEmail, displayName, 'GoogleCloud2026!');
-      } else {
-        await signIn(targetEmail, displayName, 'GoogleCloud2026!');
-      }
-      triggerSuccessFeedback();
-      onClose();
-    } catch {
-      // Infallible fallback
-      await signIn(targetEmail, googleName.trim() || 'User', 'GoogleCloud2026!');
-      triggerSuccessFeedback();
-      onClose();
+      if (await signInWithGoogle()) onClose();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to connect to Google. Please try again.');
     } finally {
       setIsSubmitting(false);
       setLoadingProvider(null);
     }
   };
 
-  // Standard Email & Password Connect
   const handleEmailConnect = async () => {
     setErrorMessage(null);
-    const cleanEmail = email.trim().toLowerCase();
-    if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
       setErrorMessage('Please enter a valid email address.');
       return;
     }
-
-    const cleanPass = password && password.length >= 6 ? password : 'CalTrackerPass2026!';
-
+    if (password.length < 6) {
+      setErrorMessage('Your password must contain at least 6 characters.');
+      return;
+    }
     setIsSubmitting(true);
     setLoadingProvider('email');
-    triggerLightImpact();
-
     try {
-      const displayName = name.trim() || cleanEmail.split('@')[0];
-      if (onSignIn) {
-        await onSignIn(cleanEmail, displayName, cleanPass);
+      const confirmed = await signIn(email, name, password, isSignUpMode);
+      if (confirmed) {
+        triggerSuccessFeedback();
+        onClose();
       } else {
-        await signIn(cleanEmail, displayName, cleanPass);
+        setIsSignUpMode(false);
+        setErrorMessage('Check your email to confirm your account, then sign in.');
       }
-      triggerSuccessFeedback();
-      onClose();
-    } catch {
-      await signIn(cleanEmail, name.trim() || 'User', cleanPass);
-      triggerSuccessFeedback();
-      onClose();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to sign in. Please try again.');
     } finally {
       setIsSubmitting(false);
       setLoadingProvider(null);
@@ -123,7 +95,7 @@ export function AuthModal({
   if (!visible) return null;
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.cardContainer}>
           {/* Header Bar */}
@@ -132,10 +104,10 @@ export function AuthModal({
               <View style={styles.logoBadge}>
                 <Sparkles size={16} color={PALETTE[50]} />
               </View>
-              <Text style={styles.brandTitle}>Cal AI Cloud Account</Text>
+              <Text style={styles.brandTitle}>Cal Tracker Account</Text>
             </View>
 
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button"
               style={styles.closeBtn}
               onPress={onClose}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -146,7 +118,7 @@ export function AuthModal({
 
           {/* Auth Method Switcher Tabs */}
           <View style={styles.tabSwitcher}>
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button"
               style={[styles.switchTab, authMethod === 'google' && styles.switchTabActive]}
               onPress={() => {
                 triggerLightImpact();
@@ -160,7 +132,7 @@ export function AuthModal({
               </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button"
               style={[styles.switchTab, authMethod === 'email' && styles.switchTabActive]}
               onPress={() => {
                 triggerLightImpact();
@@ -198,47 +170,12 @@ export function AuthModal({
                   </View>
                   <Text style={styles.heroTitle}>Continue with Google</Text>
                   <Text style={styles.heroSub}>
-                    Sign in with your Google account to back up meal logs, water tracker, and streaks to Supabase Cloud.
+                    Sign in with your Google account to back up meal logs, water tracker, and streaks to your account.
                   </Text>
                 </View>
 
-                {/* Google Email Input */}
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Google Email Address</Text>
-                  <View style={styles.inputBox}>
-                    <Mail size={16} color={PALETTE[500]} />
-                    <TextInput
-                      value={googleEmail}
-                      onChangeText={(t) => {
-                        setGoogleEmail(t);
-                        if (errorMessage) setErrorMessage(null);
-                      }}
-                      placeholder="e.g. jordan.fitness@gmail.com"
-                      placeholderTextColor={PALETTE[400]}
-                      keyboardType="email-address"
-                      autoCapitalize="none"
-                      style={styles.inputField}
-                    />
-                  </View>
-                </View>
-
-                {/* Optional Display Name */}
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Display Name (Optional)</Text>
-                  <View style={styles.inputBox}>
-                    <UserIcon size={16} color={PALETTE[500]} />
-                    <TextInput
-                      value={googleName}
-                      onChangeText={setGoogleName}
-                      placeholder="e.g. Jordan M."
-                      placeholderTextColor={PALETTE[400]}
-                      style={styles.inputField}
-                    />
-                  </View>
-                </View>
-
                 {/* Primary Google Button */}
-                <TouchableOpacity
+                <TouchableOpacity accessibilityRole="button"
                   style={styles.primaryGoogleBtn}
                   onPress={handleGoogleConnect}
                   disabled={isSubmitting}
@@ -264,7 +201,7 @@ export function AuthModal({
                   </View>
                   <View style={styles.featureItem}>
                     <CheckCircle2 size={14} color={PALETTE[700]} />
-                    <Text style={styles.featureText}>Zero localhost redirect crashes</Text>
+                    <Text style={styles.featureText}>Choose your account securely with Google</Text>
                   </View>
                   <View style={styles.featureItem}>
                     <Shield size={14} color={PALETTE[700]} />
@@ -288,7 +225,7 @@ export function AuthModal({
 
                 {/* Sub-mode selector */}
                 <View style={styles.subModePills}>
-                  <TouchableOpacity
+                  <TouchableOpacity accessibilityRole="button"
                     style={[styles.subModePill, !isSignUpMode && styles.subModePillActive]}
                     onPress={() => {
                       setIsSignUpMode(false);
@@ -298,7 +235,7 @@ export function AuthModal({
                       Sign In
                     </Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
+                  <TouchableOpacity accessibilityRole="button"
                     style={[styles.subModePill, isSignUpMode && styles.subModePillActive]}
                     onPress={() => {
                       setIsSignUpMode(true);
@@ -365,7 +302,7 @@ export function AuthModal({
                 </View>
 
                 {/* Primary Button */}
-                <TouchableOpacity
+                <TouchableOpacity accessibilityRole="button"
                   style={styles.primaryBtn}
                   onPress={handleEmailConnect}
                   disabled={isSubmitting}
@@ -380,7 +317,7 @@ export function AuthModal({
                 </TouchableOpacity>
 
                 {/* Toggle Sign Up / Sign In */}
-                <TouchableOpacity
+                <TouchableOpacity accessibilityRole="button"
                   style={styles.toggleModeBtn}
                   onPress={() => {
                     setIsSignUpMode(!isSignUpMode);
@@ -397,7 +334,7 @@ export function AuthModal({
             )}
 
             {/* Skip / Guest Mode */}
-            <TouchableOpacity style={styles.guestBtn} onPress={onClose} activeOpacity={0.6}>
+            <TouchableOpacity accessibilityRole="button" style={styles.guestBtn} onPress={onClose} activeOpacity={0.6}>
               <Text style={styles.guestBtnText}>Continue as Guest / Skip for now</Text>
             </TouchableOpacity>
           </ScrollView>
@@ -445,8 +382,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   logoBadge: {
-    width: 28,
-    height: 28,
+    width: 48,
+    height: 48,
     borderRadius: 8,
     backgroundColor: PALETTE[950],
     alignItems: 'center',
@@ -613,7 +550,7 @@ const styles = StyleSheet.create({
   },
   inputLabel: {
     fontFamily: FONTS.sans,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: PALETTE[800],
     marginBottom: 5,

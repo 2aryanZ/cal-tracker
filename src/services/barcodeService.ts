@@ -81,112 +81,26 @@ const OFFLINE_BARCODE_DATABASE: Record<string, Omit<BarcodeProductResult, 'barco
   },
 };
 
-/**
- * Fetches product nutrition facts by barcode using the global OpenFoodFacts API
- * with instant offline database fallback.
- */
-export async function fetchProductByBarcode(barcode: string): Promise<BarcodeProductResult | null> {
-  const cleanCode = barcode.trim().replace(/\s+/g, '');
-  if (!cleanCode) return null;
-
-  // 1. Check local offline database first for instant sub-millisecond response
-  if (OFFLINE_BARCODE_DATABASE[cleanCode]) {
-    return {
-      barcode: cleanCode,
-      ...OFFLINE_BARCODE_DATABASE[cleanCode],
-    };
-  }
-
-  // 2. Fetch from OpenFoodFacts World API
+export function productFromApi(barcode:string,p:Record<string,any>):BarcodeProductResult|null {
+  const n=p.nutriments??{};
+  const fields=['energy-kcal','proteins','carbohydrates','fat'];
+  const valid=(value:unknown)=>typeof value==='number'&&Number.isFinite(value)&&value>=0;
+  // All nutrients must use one complete basis. A package's size is not a serving.
+  const basis=p.serving_size&&fields.every(f=>valid(n[`${f}_serving`]))?'serving':fields.every(f=>valid(n[`${f}_100g`]))?'100g':null;
+  if(!basis)return null;
+  const serving=basis==='serving'?p.serving_size:`100 ${p.nutrition_data_per==='100ml'?'ml':'g'}`;
+  return {barcode,foodName:String(p.product_name||p.product_name_en||p.generic_name||'Unnamed packaged food'),brand:p.brands||undefined,calories:Math.round(n[`energy-kcal_${basis}`]),protein:n[`proteins_${basis}`],carbs:n[`carbohydrates_${basis}`],fats:n[`fat_${basis}`],servingSize:serving,confidence:1,breakdown:[]};
+}
+export async function fetchProductByBarcode(barcode:string,signal?:AbortSignal):Promise<BarcodeProductResult|null> {
+  const code=barcode.trim();
+  if(!/^\d{8,14}$/.test(code))return null;
+  if(OFFLINE_BARCODE_DATABASE[code])return {barcode:code,...OFFLINE_BARCODE_DATABASE[code]};
+  const controller=new AbortController();const abort=()=>controller.abort();const timeout=setTimeout(abort,6000);signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)controller.abort();
   try {
-    const endpoint = `https://world.openfoodfacts.org/api/v2/product/${cleanCode}.json`;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout
-
-    const response = await fetch(endpoint, {
-      method: 'GET',
-      headers: {
-        'User-Agent': 'CalTrackerApp - Android/iOS - Version 1.0.0 - www.caltracker.app',
-        'Accept': 'application/json',
-      },
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (response.ok) {
-      const data = await response.json();
-      if (data.status === 1 && data.product) {
-        const p = data.product;
-        const nutriments = p.nutriments || {};
-
-        const productName =
-          p.product_name ||
-          p.product_name_en ||
-          p.generic_name ||
-          `Packaged Product (${cleanCode})`;
-        const brand = p.brands || p.brand_owner || '';
-        const displayName = brand ? `${brand} ${productName}` : productName;
-
-        // Extract calories (per serving preferred, fallback to per 100g)
-        const calories = Math.round(
-          Number(nutriments['energy-kcal_serving'] ?? nutriments['energy-kcal_100g'] ?? nutriments['energy-kcal'] ?? 150)
-        );
-
-        // Extract macros
-        const protein = Math.round(
-          Number(nutriments['proteins_serving'] ?? nutriments['proteins_100g'] ?? nutriments['proteins'] ?? 5)
-        );
-        const carbs = Math.round(
-          Number(nutriments['carbohydrates_serving'] ?? nutriments['carbohydrates_100g'] ?? nutriments['carbohydrates'] ?? 20)
-        );
-        const fats = Math.round(
-          Number(nutriments['fat_serving'] ?? nutriments['fat_100g'] ?? nutriments['fat'] ?? 5)
-        );
-
-        const servingSize =
-          p.serving_size ||
-          p.serving_quantity_unit ||
-          (p.quantity ? `1 package (${p.quantity})` : '1 standard serving (100g)');
-
-        const breakdown = [
-          {
-            item: `${productName} (${servingSize})`,
-            portion: servingSize,
-            calories,
-          },
-        ];
-
-        return {
-          barcode: cleanCode,
-          foodName: displayName.trim(),
-          brand: brand.trim() || undefined,
-          calories: Math.max(0, calories),
-          protein: Math.max(0, protein),
-          carbs: Math.max(0, carbs),
-          fats: Math.max(0, fats),
-          servingSize,
-          confidence: 0.98,
-          breakdown,
-        };
-      }
-    }
-  } catch (error) {
-    console.warn('OpenFoodFacts API query notice:', error);
-  }
-
-  // 3. Fallback generic response if barcode exists but wasn't found in OpenFoodFacts
-  return {
-    barcode: cleanCode,
-    foodName: `Scanned Item #${cleanCode.slice(-4)}`,
-    calories: 180,
-    protein: 10,
-    carbs: 22,
-    fats: 6,
-    servingSize: '1 package',
-    confidence: 0.85,
-    breakdown: [
-      { item: `Scanned Barcode #${cleanCode}`, portion: '1 package', calories: 180 },
-    ],
-  };
+    const response=await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json`,{headers:{Accept:'application/json'},signal:controller.signal});
+    if(!response.ok)throw new Error('Product lookup is unavailable. Try scanning the nutrition label.');
+    const data=await response.json();
+    return data.status===1&&data.product?productFromApi(code,data.product):null;
+  }catch(error){if(controller.signal.aborted)throw new Error(signal?.aborted?'Lookup cancelled.':'Product lookup timed out.');throw error;}
+  finally{clearTimeout(timeout);signal?.removeEventListener('abort',abort);}
 }

@@ -101,7 +101,7 @@ export function calculateNutritionPlan(profile: UserProfile): NutritionPlan {
 
   // 4. Evidence-Based Macronutrient Split
   // Protein: (weightKg * proteinPerKg) * 4 kcal/g
-  const targetProteinGrams = Math.round(weightKg * proteinPerKg);
+  const targetProteinGrams = Math.min(Math.round(weightKg * proteinPerKg), Math.floor(targetCalories * .7 / 4));
   const proteinCalories = targetProteinGrams * 4;
 
   // Fats: 28% of total calories (essential hormonal baseline)
@@ -131,7 +131,7 @@ export function calculateNutritionPlan(profile: UserProfile): NutritionPlan {
     bmr,
     tdee,
     targetCalories,
-    deficitOrSurplus,
+    deficitOrSurplus: targetCalories - tdee,
     estimatedWeeksToGoal,
     dailyWaterMl,
     proteinPerKg,
@@ -160,80 +160,18 @@ export interface PersonalizedHydration {
   breakdown: HydrationBreakdown;
 }
 
-/**
- * Clinical Evidence-Based Daily Water Intake Calculation:
- * Synthesizes guidelines from:
- * 1. NASEM (National Academies of Sciences, Engineering, and Medicine) & Mayo Clinic:
- *    - Average adult baseline: 3.7L total fluid for men, 2.7L for women;
- *    - ~80% directly from beverages (~3,000 ml for men, ~2,200 ml for women), 20% from food moisture.
- * 2. EFSA (European Food Safety Authority): 2.5L for men, 2.0L for women from beverages.
- * 3. Anthropometric Scaling:
- *    - Weight component: 25 ml/kg covers cellular metabolism & solute renal clearance.
- *    - Height component: 3.5 ml/cm covers respiratory tidal loss and body surface area (BSA) insensible perspiration.
- *    - Male lean mass offset: +100 ml (higher lean muscle water storage vs adipose tissue).
- *    - Exercise perspiration factor: +0 to +550 ml based on step count / training intensity.
- *    - Goal metabolic factor: +200 ml for fat loss (ketone clearance/thermogenesis), +250 ml for muscle gain (glycogen hydration).
- *    - Clamped safely between 1,800 ml (minimum healthy baseline) and 4,500 ml.
- */
+/** Adjustable starting estimate for beverages; not a clinical prescription. */
 export function calculatePersonalizedWaterIntake(
   weightKg: number,
-  heightCm: number,
-  gender: Gender = 'male',
+  _heightCm: number,
+  _gender: Gender = 'male',
   activityLevel: ActivityLevel = 'moderate',
-  goal: FitnessGoal = 'maintenance'
+  _goal: FitnessGoal = 'maintenance'
 ): PersonalizedHydration {
-  const safeWeight = Math.max(30, Math.min(250, weightKg || 75));
-  const safeHeight = Math.max(120, Math.min(230, heightCm || 175));
-
-  // Weight component: 25 ml per kg
-  const weightMl = Math.round(safeWeight * 25);
-
-  // Height component: 3.5 ml per cm (accounting for body surface area & pulmonary insensible fluid loss)
-  const heightMl = Math.round(safeHeight * 3.5);
-
-  // Lean mass offset: males carry higher fat-free mass (~73% water) vs females
-  const genderMl = gender === 'male' ? 100 : 0;
-
-  // Activity & perspiration factor
-  const activityMap: Record<ActivityLevel, number> = {
-    sedentary: 0,
-    light: 200,
-    moderate: 350,
-    very_active: 550,
-  };
-  const activityMl = activityMap[activityLevel] ?? 250;
-
-  // Metabolic goal factor
-  let goalMl = 0;
-  if (goal === 'fat_loss') {
-    goalMl = 200; // Flushes metabolic waste & supports lipolysis
-  } else if (goal === 'muscle_gain') {
-    goalMl = 250; // Supports glycogen storage (1g glycogen binds 3-4g water) & intracellular volume
-  } else if (goal === 'recomposition') {
-    goalMl = 100;
-  }
-
-  const rawTotal = weightMl + heightMl + genderMl + activityMl + goalMl;
-  // Round to nearest 50 ml
-  const rounded = Math.round(rawTotal / 50) * 50;
-  // Clinically clamped safe range
-  const dailyWaterMl = Math.max(1800, Math.min(4500, rounded));
-  const recommendedGlasses = Math.round(dailyWaterMl / 250);
-
-  const formulaSummary = `${safeWeight}kg (weight) + ${safeHeight}cm (height/BSA) + ${activityLevel.replace('_', ' ')} activity`;
-
-  return {
-    dailyWaterMl,
-    recommendedGlasses,
-    formulaSummary,
-    breakdown: {
-      weightMl,
-      heightMl,
-      genderMl,
-      activityMl,
-      goalMl,
-    },
-  };
+  const weightMl = Math.round(Math.max(30, Math.min(400, weightKg)) * 30);
+  const activityMl = ({sedentary:0,light:150,moderate:300,very_active:500})[activityLevel];
+  const dailyWaterMl = Math.max(1500, Math.min(4000, Math.round((weightMl + activityMl) / 50) * 50));
+  return { dailyWaterMl, recommendedGlasses:Math.round(dailyWaterMl/250), formulaSummary:'Adjustable starting estimate; individual needs vary.', breakdown:{weightMl,heightMl:0,genderMl:0,activityMl,goalMl:0} };
 }
 
 /**
@@ -244,7 +182,7 @@ export function lbsToKg(lbs: number): number {
 }
 
 export function kgToLbs(kg: number): number {
-  return Math.round(kg * 2.20462);
+  return Math.round(kg * 2.20462 * 10) / 10;
 }
 
 export function ftInToCm(feet: number, inches: number): number {
@@ -252,8 +190,8 @@ export function ftInToCm(feet: number, inches: number): number {
 }
 
 export function cmToFtIn(cm: number): { feet: number; inches: number } {
-  const totalInches = cm / 2.54;
+  const totalInches = Math.round(cm / 2.54);
   const feet = Math.floor(totalInches / 12);
-  const inches = Math.round(totalInches % 12);
+  const inches = totalInches % 12;
   return { feet, inches };
 }

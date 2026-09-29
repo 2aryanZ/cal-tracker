@@ -8,1121 +8,584 @@ import {
   TextInput,
   ScrollView,
   Platform,
-  Alert,
+  KeyboardAvoidingView,
+  ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import {
-  Flame,
-  Plus,
-  Minus,
-  ArrowLeft,
-  Drumstick,
-  Wheat,
-  Droplet,
-  Camera,
-  Trash2,
-  Check,
-  Search,
-  Sparkles,
-} from 'lucide-react-native';
-import { AiFoodDetectionResult, MealType, FoodEntry } from '@/types/nutrition';
-import {
-  FoodDatabaseItem,
-  searchFoodDatabase,
-} from '@/services/aiFoodService';
-import { PALETTE, FONTS } from '@/constants/theme';
-import { triggerLightImpact, triggerSelection, triggerSuccessFeedback } from '@/services/hapticsService';
-
-interface IngredientItem {
-  id: string;
+import { X, Camera, Plus, Trash2, Heart } from 'lucide-react-native';
+import type {
+  AiFoodDetectionResult,
+  MealType,
+  FoodEntry,
+} from '@/types/nutrition';
+import { searchFoodDatabase } from '@/services/aiFoodService';
+import { validateMeal, assertNumber } from '@/services/nutritionRules';
+import { persistMealPhoto } from '@/services/photoStorage';
+import { useNutrition } from '@/context/NutritionContext';
+import { JOURNAL, FONTS } from '@/constants/theme';
+interface MealData {
+  id?: string;
   name: string;
-  portion: string;
+  foodName?: string;
   calories: number;
+  protein: number;
+  carbs: number;
+  fats: number;
+  portionSize: string;
+  mealType: MealType;
+  imageUri?: string;
+  source?: FoodEntry['source'];
+  isAiGenerated?: boolean;
+  ingredients?: { item: string; portion: string; calories: number }[];
 }
-
-interface MealResultModalProps {
+interface Props {
   visible: boolean;
   onClose: () => void;
   result?: AiFoodDetectionResult | null;
   editingEntry?: FoodEntry | null;
   defaultMealType?: MealType;
   imageUri?: string;
-  onConfirm: (data: {
-    id?: string;
-    name: string;
-    foodName?: string;
-    calories: number;
-    protein: number;
-    carbs: number;
-    fats: number;
-    portionSize: string;
-    mealType: MealType;
-    imageUri?: string;
-  }) => void;
-  onDeleteEntry?: (id: string) => void;
+  sourceLabel?: string;
+  nutritionSource?: FoodEntry['source'];
+  onConfirm: (data: MealData) => void | Promise<void>;
+  onDeleteEntry?: (id: string) => void | Promise<void>;
 }
-
-const DEFAULT_IMAGE =
-  'https://images.unsplash.com/photo-1540420773420-3366772f4999?w=350&q=75&auto=format&fit=crop';
-
-function getInitialMealState(
-  editingEntry?: FoodEntry | null,
-  result?: AiFoodDetectionResult | null,
-  defaultMealType: MealType = 'lunch',
-  imageUri?: string
-) {
-  if (editingEntry) {
-    return {
-      foodName: editingEntry.name || '',
-      calories: String(editingEntry.calories || 0),
-      protein: String(editingEntry.protein || 0),
-      carbs: String(editingEntry.carbs || 0),
-      fats: String(editingEntry.fats || 0),
-      portion: editingEntry.portionSize || '1 serving',
-      mealType: editingEntry.mealType || 'lunch',
-      selectedPhoto: editingEntry.imageUri || DEFAULT_IMAGE,
-      ingredients: [
-        {
-          id: '1',
-          name: editingEntry.name || 'Main Portion',
-          portion: editingEntry.portionSize || '1 serving',
-          calories: editingEntry.calories || 0,
-        },
-      ],
-    };
-  }
-  if (result) {
-    const ingredients =
-      result.breakdown && result.breakdown.length > 0
-        ? result.breakdown.map((b, i) => ({
-            id: `ing_${i}`,
-            name: b.item,
-            portion: b.portion,
-            calories: b.calories,
-          }))
-        : [
-            {
-              id: '1',
-              name: result.foodName || 'Main Portion',
-              portion: result.servingSize || '1 serving',
-              calories: result.calories || 450,
-            },
-          ];
-    return {
-      foodName: result.foodName || 'Detected Meal',
-      calories: String(Math.round(result.calories || 450)),
-      protein: String(Math.round(result.protein || 30)),
-      carbs: String(Math.round(result.carbs || 45)),
-      fats: String(Math.round(result.fats || 15)),
-      portion: result.servingSize || '1 serving',
-      mealType: defaultMealType || 'lunch',
-      selectedPhoto: imageUri || DEFAULT_IMAGE,
-      ingredients,
-    };
-  }
-  return {
-    foodName: 'Grilled Chicken Caesar Salad',
-    calories: '520',
-    protein: '46',
-    carbs: '18',
-    fats: '28',
-    portion: '1 bowl (350g)',
-    mealType: defaultMealType || 'lunch',
-    selectedPhoto: imageUri || DEFAULT_IMAGE,
-    ingredients: [
-      { id: '1', name: 'Grilled Chicken Breast', portion: '180g', calories: 290 },
-      { id: '2', name: 'Mixed Greens & Cucumber', portion: '100g', calories: 30 },
-      { id: '3', name: 'Olive Oil & Caesar Dressing', portion: '30ml', calories: 140 },
-      { id: '4', name: 'Parmesan & Croutons', portion: '40g', calories: 60 },
-    ],
-  };
-}
-
-function MealResultModalContent({
+type IngredientDraft = { item: string; portion: string; calories: string };
+function MealForm({
   onClose,
   result,
   editingEntry,
   defaultMealType = 'lunch',
   imageUri,
+  sourceLabel,
+  nutritionSource,
   onConfirm,
   onDeleteEntry,
-}: Omit<MealResultModalProps, 'visible'>) {
-  const [initialData] = useState(() => getInitialMealState(editingEntry, result, defaultMealType, imageUri));
-  const [foodName, setFoodName] = useState(initialData.foodName);
-  const [calories, setCalories] = useState(initialData.calories);
-  const [protein, setProtein] = useState(initialData.protein);
-  const [carbs, setCarbs] = useState(initialData.carbs);
-  const [fats, setFats] = useState(initialData.fats);
-  const [portion, setPortion] = useState(initialData.portion);
-  const [mealType, setMealType] = useState<MealType>(initialData.mealType);
-  const [multiplier, setMultiplier] = useState(1);
-  const [selectedPhoto, setSelectedPhoto] = useState<string>(initialData.selectedPhoto);
-  const [ingredients, setIngredients] = useState<IngredientItem[]>(initialData.ingredients);
-  const [searchFilter, setSearchFilter] = useState('');
-
-  const handlePickPhoto = async () => {
+}: Omit<Props, 'visible'>) {
+  const { toggleFavoriteMeal, isFavoriteMeal } = useNutrition();
+  const initial =
+    editingEntry ??
+    (result
+      ? { name: result.foodName, ...result, portionSize: result.servingSize }
+      : null);
+  const [name, setName] = useState(initial?.name ?? '');
+  const [nutrition, setNutrition] = useState({
+    calories: String(initial?.calories ?? ''),
+    protein: String(initial?.protein ?? ''),
+    carbs: String(initial?.carbs ?? ''),
+    fats: String(initial?.fats ?? ''),
+  });
+  const [portion, setPortion] = useState(initial?.portionSize ?? '1 serving'),
+    [type, setType] = useState<MealType>(
+      editingEntry?.mealType ?? defaultMealType,
+    );
+  const [photo, setPhoto] = useState(editingEntry?.imageUri ?? imageUri ?? '');
+  const [notes, setNotes] = useState<IngredientDraft[]>(
+    (editingEntry?.ingredients ?? result?.breakdown ?? []).map((i) => ({
+      ...i,
+      calories: String(i.calories),
+    })),
+  );
+  const [busy, setBusy] = useState(false),
+    [error, setError] = useState(''),
+    [search, setSearch] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const build = (): MealData => {
+    if (Object.values(nutrition).some((value) => !value.trim()))
+      throw new Error('Enter all nutrition values. Zero is allowed.');
+    if (notes.some((note) => !note.item.trim() || !note.calories.trim()))
+      throw new Error(
+        'Enter an ingredient name and calorie value, or remove the empty note.',
+      );
+    const source = editingEntry?.source ?? nutritionSource ?? 'manual';
+    const data = {
+      id: editingEntry?.id,
+      name: name.trim(),
+      source,
+      isAiGenerated:
+        editingEntry?.isAiGenerated ??
+        (source === 'photo' || source === 'label' || source === 'text'),
+      ...Object.fromEntries(
+        Object.entries(nutrition).map(([k, v]) => [k, Number(v)]),
+      ),
+      mealType: type,
+      portionSize: portion.trim(),
+      imageUri: photo || undefined,
+      ingredients: notes.map((i) => ({ ...i, calories: Number(i.calories) })),
+    } as MealData;
+    validateMeal(data);
+    data.ingredients?.forEach((i) => {
+      if (!i.calories && i.calories !== 0)
+        throw new Error('Enter an ingredient calorie value.');
+      assertNumber(i.calories, 'Ingredient calories', 0, 10000);
+    });
+    return data;
+  };
+  const run = async (action: () => Promise<void>) => {
+    if (busy) return;
+    setBusy(true);
+    setError('');
     try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert(
-          'Photo Library Access Required',
-          'Please allow photo library access in your device settings to select food images.'
-        );
-        return;
-      }
-
-      const pick = await ImagePicker.launchImageLibraryAsync({
+      await action();
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : 'Unable to complete this action.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+  const save = () =>
+    run(async () => {
+      const data = build();
+      data.imageUri = await persistMealPhoto(data.imageUri);
+      await onConfirm(data);
+      onClose();
+    });
+  const pick = () =>
+    run(async () => {
+      const permission =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted)
+        throw new Error('Allow photo library access to attach a meal photo.');
+      const selected = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         allowsEditing: true,
         aspect: [4, 3],
-        quality: 0.85,
+        quality: 0.8,
       });
-
-      if (!pick.canceled && pick.assets?.[0]) {
-        setSelectedPhoto(pick.assets[0].uri);
-      }
-    } catch (e) {
-      console.warn('Image picker error:', e);
-    }
-  };
-
-  const handleSelectFoodPreset = (item: FoodDatabaseItem) => {
-    triggerSelection();
-    setFoodName(item.name);
-    setCalories(String(item.calories));
-    setProtein(String(item.protein));
-    setCarbs(String(item.carbs));
-    setFats(String(item.fats));
-    setPortion(item.servingSize);
-    setSelectedPhoto(item.imageUri);
-    setMealType(item.category);
-    setMultiplier(1);
-    setIngredients(
-      item.breakdown.map((b, i) => ({
-        id: `ing_${i}_${Date.now()}`,
-        name: b.item,
-        portion: b.portion,
-        calories: b.calories,
-      }))
+      if (!selected.canceled && selected.assets[0])
+        setPhoto(selected.assets[0].uri);
+    });
+  const changeNote = (
+    index: number,
+    field: keyof IngredientDraft,
+    value: string,
+  ) =>
+    setNotes((all) =>
+      all.map((note, i) => (i === index ? { ...note, [field]: value } : note)),
     );
-  };
-
-  const handleMultiplierChange = (newMultiplier: number) => {
-    if (newMultiplier <= 0) return;
-    triggerLightImpact();
-    const ratio = newMultiplier / multiplier;
-    setMultiplier(newMultiplier);
-    setCalories(String(Math.round((Number(calories) || 0) * ratio)));
-    setProtein(String(Math.round((Number(protein) || 0) * ratio)));
-    setCarbs(String(Math.round((Number(carbs) || 0) * ratio)));
-    setFats(String(Math.round((Number(fats) || 0) * ratio)));
-  };
-
-  // Add new ingredient row
-  const handleAddIngredient = () => {
-    triggerLightImpact();
-    const newIng: IngredientItem = {
-      id: `ing_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
-      name: 'New Ingredient',
-      portion: '100g',
-      calories: 80,
-    };
-    const updated = [...ingredients, newIng];
-    setIngredients(updated);
-    const totalCal = updated.reduce((sum, item) => sum + (Number(item.calories) || 0), 0);
-    setCalories(String(totalCal));
-  };
-
-  // Update ingredient field
-  const handleUpdateIngredient = (id: string, field: 'name' | 'portion' | 'calories', val: string) => {
-    const updated = ingredients.map((item) => {
-      if (item.id === id) {
-        return {
-          ...item,
-          [field]: field === 'calories' ? Number(val) || 0 : val,
-        };
-      }
-      return item;
-    });
-    setIngredients(updated);
-    if (field === 'calories') {
-      const totalCal = updated.reduce((sum, item) => sum + (Number(item.calories) || 0), 0);
-      setCalories(String(totalCal));
-    }
-  };
-
-  // Delete ingredient row
-  const handleDeleteIngredient = (id: string) => {
-    triggerLightImpact();
-    const updated = ingredients.filter((item) => item.id !== id);
-    setIngredients(updated);
-    const totalCal = updated.reduce((sum, item) => sum + (Number(item.calories) || 0), 0);
-    setCalories(String(totalCal));
-  };
-
-  const handleSave = () => {
-    triggerSuccessFeedback();
-    onConfirm({
-      id: editingEntry?.id,
-      name: foodName.trim() || 'Logged Meal',
-      foodName: foodName.trim() || 'Logged Meal',
-      calories: Number(calories) || 0,
-      protein: Number(protein) || 0,
-      carbs: Number(carbs) || 0,
-      fats: Number(fats) || 0,
-      mealType,
-      portionSize: portion,
-      imageUri: selectedPhoto,
-    });
-    onClose();
-  };
-
-  const handleDeleteEntry = () => {
-    if (editingEntry?.id && onDeleteEntry) {
-      onDeleteEntry(editingEntry.id);
-      onClose();
-    }
-  };
-
-  const filteredPresets = searchFoodDatabase(searchFilter);
-
   return (
-    <View style={styles.overlay}>
-        {/* Top Header Controls */}
-        <View style={styles.topBar}>
-          <TouchableOpacity onPress={onClose} style={styles.topIconBtn}>
-            <ArrowLeft size={18} color={PALETTE[50]} />
-          </TouchableOpacity>
-          <Text style={styles.topBarTitle}>Meal Details</Text>
-          <TouchableOpacity
-            style={styles.changePhotoHeaderBtn}
-            onPress={handlePickPhoto}
-            activeOpacity={0.85}>
-            <Camera size={14} color={PALETTE[50]} />
-            <Text style={styles.changePhotoHeaderText}>Change Photo</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Top Image Preview with Tap-to-Change Overlay */}
-        <TouchableOpacity
-          style={styles.imageWrapper}
-          onPress={handlePickPhoto}
-          activeOpacity={0.9}>
-          <Image
-            source={{ uri: selectedPhoto }}
-            style={styles.topImage}
-            cachePolicy="memory-disk"
-            transition={150}
-          />
-          <View style={styles.changePhotoBadge}>
-            <Camera size={12} color={PALETTE[50]} />
-            <Text style={styles.changePhotoBadgeText}>Tap to Change Photo</Text>
+    <SafeAreaView style={styles.page}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.body}
+        >
+          <View style={styles.header}>
+            <Text accessibilityRole="header" style={styles.title}>
+              {editingEntry
+                ? 'Edit meal'
+                : result
+                  ? 'Review meal'
+                  : 'Add a meal'}
+            </Text>
+            <TouchableOpacity
+              disabled={busy}
+              accessibilityRole="button"
+              accessibilityLabel="Close meal details"
+              onPress={onClose}
+              style={styles.iconButton}
+            >
+              <X size={22} color={JOURNAL.ink} />
+            </TouchableOpacity>
           </View>
-        </TouchableOpacity>
-
-        {/* Bottom Nutrition Sheet */}
-        <View style={styles.sheetContainer}>
-          <ScrollView style={styles.scrollBody} showsVerticalScrollIndicator={false}>
-            {/* Quick 1-Tap Food Match Search Carousel */}
-            <View style={styles.databaseMatchSection}>
-              <View style={styles.dbHeaderRow}>
-                <Sparkles size={13} color={PALETTE[700]} />
-                <Text style={styles.dbSectionTitle}>AI FOOD SEARCH & MATCH (1-TAP AUTOFILL):</Text>
-              </View>
-
-              <View style={styles.searchBarBox}>
-                <Search size={14} color={PALETTE[400]} />
-                <TextInput
-                  value={searchFilter}
-                  onChangeText={setSearchFilter}
-                  placeholder="Search 40+ foods (e.g. Biryani, Salmon, Pizza, Oats...)"
-                  placeholderTextColor={PALETTE[400]}
-                  style={styles.searchBarInput}
-                />
-              </View>
-
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.presetsList}>
-                {filteredPresets.map((item) => {
-                  const isSelected = foodName === item.name;
-                  return (
+          <Text style={styles.caption}>
+            {sourceLabel ||
+              (editingEntry?.source === 'barcode'
+                ? 'Barcode values'
+                : editingEntry?.isAiGenerated || result
+                  ? 'Review the nutrition values before saving. Estimates may need adjusting.'
+                  : 'Enter nutrition from a food label or your own measurements.')}
+          </Text>
+          {error ? (
+            <Text accessibilityRole="alert" style={styles.error}>
+              {error}
+            </Text>
+          ) : null}
+          {!editingEntry && !result && (
+            <View style={styles.examples}>
+              <Text style={styles.label}>
+                Optional food examples · estimates
+              </Text>
+              <TextInput
+                accessibilityLabel="Search example foods"
+                style={styles.input}
+                placeholder="Search example foods"
+                placeholderTextColor={JOURNAL.muted}
+                value={search}
+                onChangeText={setSearch}
+              />
+              {search.trim()
+                ? searchFoodDatabase(search).map((item) => (
                     <TouchableOpacity
+                      accessibilityRole="button"
                       key={item.name}
-                      style={[styles.foodChipBtn, isSelected && styles.foodChipBtnActive]}
-                      onPress={() => handleSelectFoodPreset(item)}
-                      activeOpacity={0.8}>
-                      <Image
-                        source={{ uri: item.imageUri }}
-                        style={styles.foodChipThumb}
-                        cachePolicy="memory-disk"
-                        transition={100}
-                      />
-                      <View>
-                        <Text
-                          style={[styles.foodChipText, isSelected && styles.foodChipTextActive]}
-                          numberOfLines={1}>
-                          {item.name}
-                        </Text>
-                        <Text style={styles.foodChipSub}>
-                          {item.calories} kcal • {item.protein}g P
-                        </Text>
-                      </View>
+                      style={styles.example}
+                      onPress={() => {
+                        setName(item.name);
+                        setNutrition({
+                          calories: String(item.calories),
+                          protein: String(item.protein),
+                          carbs: String(item.carbs),
+                          fats: String(item.fats),
+                        });
+                        setPortion(item.servingSize);
+                        setType(item.category);
+                        setNotes(
+                          item.breakdown.map((i) => ({
+                            ...i,
+                            calories: String(i.calories),
+                          })),
+                        );
+                        setSearch('');
+                      }}
+                    >
+                      <Text style={styles.text}>
+                        {item.name} · {item.calories} kcal
+                      </Text>
                     </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
+                  ))
+                : null}
             </View>
-
-            {/* Meal Type Category Selector */}
-            <View style={styles.mealTypeRow}>
-              {(['breakfast', 'lunch', 'dinner', 'snack'] as MealType[]).map((t) => (
+          )}
+          <Text style={styles.label}>Meal name</Text>
+          <TextInput
+            accessibilityLabel="Meal name"
+            style={styles.input}
+            value={name}
+            onChangeText={setName}
+            placeholder="What did you eat?"
+            placeholderTextColor={JOURNAL.muted}
+          />
+          <Text style={styles.label}>Meal</Text>
+          <View style={styles.slots}>
+            {(['breakfast', 'lunch', 'dinner', 'snack'] as MealType[]).map(
+              (slot) => (
                 <TouchableOpacity
-                  key={t}
-                  style={[styles.mealTypePill, mealType === t && styles.mealTypePillActive]}
-                  onPress={() => setMealType(t)}
-                  activeOpacity={0.7}>
-                  <Text style={[styles.mealTypeText, mealType === t && styles.mealTypeTextActive]}>
-                    {t.charAt(0).toUpperCase() + t.slice(1)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: type === slot }}
+                  key={slot}
+                  style={[styles.slot, type === slot && styles.selected]}
+                  onPress={() => setType(slot)}
+                >
+                  <Text style={styles.slotText}>
+                    {slot[0].toUpperCase() + slot.slice(1)}
                   </Text>
                 </TouchableOpacity>
-              ))}
-            </View>
-
-            {/* Title & Serving Multiplier */}
-            <View style={styles.titleRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.timeTag}>
-                  {editingEntry?.timestamp
-                    ? new Date(editingEntry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                    : 'Today • Ready to Log'}
-                </Text>
+              ),
+            )}
+          </View>
+          <Text style={styles.label}>Portion</Text>
+          <TextInput
+            accessibilityLabel="Portion size"
+            style={styles.input}
+            value={portion}
+            onChangeText={setPortion}
+          />
+          <Text style={styles.caption}>
+            Nutrition values below apply to this whole portion. Editing the
+            portion description does not change them.
+          </Text>
+          <View style={styles.nutrition}>
+            {(
+              [
+                { key: 'calories', label: 'Calories (kcal)' },
+                { key: 'protein', label: 'Protein (g)' },
+                { key: 'carbs', label: 'Carbs (g)' },
+                { key: 'fats', label: 'Fat (g)' },
+              ] as const
+            ).map(({ key, label }) => (
+              <View key={key} style={styles.field}>
+                <Text style={styles.label}>{label}</Text>
                 <TextInput
-                  value={foodName}
-                  onChangeText={setFoodName}
-                  style={styles.foodNameInput}
-                  placeholder="Dish Name"
-                  placeholderTextColor={PALETTE[400]}
+                  accessibilityLabel={label}
+                  keyboardType="decimal-pad"
+                  value={nutrition[key]}
+                  onChangeText={(value) =>
+                    setNutrition((all) => ({ ...all, [key]: value }))
+                  }
+                  style={styles.input}
+                  placeholder="0"
+                  placeholderTextColor={JOURNAL.muted}
                 />
               </View>
-
-              {/* Stepper */}
-              <View style={styles.stepperBox}>
-                <TouchableOpacity
-                  onPress={() => handleMultiplierChange(Math.max(0.5, multiplier - 0.5))}
-                  style={styles.stepBtn}>
-                  <Minus size={13} color={PALETTE[950]} />
-                </TouchableOpacity>
-                <Text style={styles.stepperVal}>{multiplier}x</Text>
-                <TouchableOpacity
-                  onPress={() => handleMultiplierChange(multiplier + 0.5)}
-                  style={styles.stepBtn}>
-                  <Plus size={13} color={PALETTE[950]} />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Calorie Hero Card */}
-            <View style={styles.calorieHeroCard}>
-              <View style={styles.calIconBox}>
-                <Flame size={18} color={PALETTE[950]} fill={PALETTE[950]} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.calLabel}>Total Calories</Text>
-                <View style={styles.calInputRow}>
-                  <TextInput
-                    value={calories}
-                    onChangeText={setCalories}
-                    keyboardType="numeric"
-                    style={styles.calInput}
-                  />
-                  <Text style={styles.calUnitText}>kcal</Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Quick Calorie Adjustment Chips */}
-            <View style={styles.quickCalPillsRow}>
-              <TouchableOpacity
-                style={styles.quickCalPill}
-                onPress={() => setCalories(String(Math.max(0, (Number(calories) || 0) - 50)))}>
-                <Text style={styles.quickCalPillText}>-50</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.quickCalPill}
-                onPress={() => setCalories(String((Number(calories) || 0) + 50))}>
-                <Text style={styles.quickCalPillText}>+50</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.quickCalPill}
-                onPress={() => setCalories(String((Number(calories) || 0) + 100))}>
-                <Text style={styles.quickCalPillText}>+100</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.quickCalPill}
-                onPress={() => setCalories(String((Number(calories) || 0) + 200))}>
-                <Text style={styles.quickCalPillText}>+200</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.quickCalPill, styles.quickCalPillAuto]}
-                onPress={() => {
-                  const cals = Number(calories) || 450;
-                  setProtein(String(Math.round((cals * 0.3) / 4)));
-                  setCarbs(String(Math.round((cals * 0.45) / 4)));
-                  setFats(String(Math.round((cals * 0.25) / 9)));
-                }}>
-                <Text style={styles.quickCalPillAutoText}>✨ Auto Macros</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* 3 Macro Columns - 100% Fully Editable */}
-            <View style={styles.macroColumnsRow}>
-              <View style={styles.macroCol}>
-                <View style={styles.macroHeaderPill}>
-                  <Drumstick size={12} color={PALETTE[700]} />
-                  <Text style={styles.macroColLabel}>Protein</Text>
-                </View>
-                <View style={styles.macroInputRow}>
-                  <TextInput
-                    value={protein}
-                    onChangeText={setProtein}
-                    keyboardType="numeric"
-                    selectTextOnFocus
-                    style={styles.macroColInput}
-                  />
-                  <Text style={styles.macroUnitText}>g</Text>
-                </View>
-              </View>
-
-              <View style={styles.macroCol}>
-                <View style={styles.macroHeaderPill}>
-                  <Wheat size={12} color={PALETTE[500]} />
-                  <Text style={styles.macroColLabel}>Carbs</Text>
-                </View>
-                <View style={styles.macroInputRow}>
-                  <TextInput
-                    value={carbs}
-                    onChangeText={setCarbs}
-                    keyboardType="numeric"
-                    selectTextOnFocus
-                    style={styles.macroColInput}
-                  />
-                  <Text style={styles.macroUnitText}>g</Text>
-                </View>
-              </View>
-
-              <View style={styles.macroCol}>
-                <View style={styles.macroHeaderPill}>
-                  <Droplet size={12} color={PALETTE[400]} />
-                  <Text style={styles.macroColLabel}>Fats</Text>
-                </View>
-                <View style={styles.macroInputRow}>
-                  <TextInput
-                    value={fats}
-                    onChangeText={setFats}
-                    keyboardType="numeric"
-                    selectTextOnFocus
-                    style={styles.macroColInput}
-                  />
-                  <Text style={styles.macroUnitText}>g</Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Ingredients Section with Full Editing & Adding */}
-            <View style={styles.ingredientsHeader}>
-              <View>
-                <Text style={styles.ingredientsTitle}>Ingredients Breakdown</Text>
-                <Text style={styles.ingredientsSub}>Tap items to edit name, portion, or calories</Text>
-              </View>
-              <TouchableOpacity style={styles.addIngBtn} onPress={handleAddIngredient} activeOpacity={0.8}>
-                <Plus size={13} color={PALETTE[50]} />
-                <Text style={styles.addIngBtnText}>Add Item</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.ingredientsList}>
-              {ingredients.map((ing) => (
-                <View key={ing.id} style={styles.ingredientRow}>
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <TextInput
-                      value={ing.name}
-                      onChangeText={(val) => handleUpdateIngredient(ing.id, 'name', val)}
-                      style={styles.ingNameInput}
-                      placeholder="Ingredient name"
-                      placeholderTextColor={PALETTE[400]}
-                    />
-                    <TextInput
-                      value={ing.portion}
-                      onChangeText={(val) => handleUpdateIngredient(ing.id, 'portion', val)}
-                      style={styles.ingPortionInput}
-                      placeholder="Portion (e.g. 100g)"
-                      placeholderTextColor={PALETTE[400]}
-                    />
-                  </View>
-
-                  <View style={styles.ingCalBox}>
-                    <TextInput
-                      value={String(ing.calories)}
-                      onChangeText={(val) => handleUpdateIngredient(ing.id, 'calories', val)}
-                      keyboardType="numeric"
-                      style={styles.ingCalInput}
-                    />
-                    <Text style={styles.ingCalUnit}>cal</Text>
-                  </View>
-
-                  <TouchableOpacity
-                    style={styles.ingDeleteBtn}
-                    onPress={() => handleDeleteIngredient(ing.id)}>
-                    <Trash2 size={13} color={PALETTE[400]} />
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </View>
-
-            {/* Portion Text Input */}
-            <View style={styles.portionRow}>
-              <Text style={styles.portionLabel}>Portion Size Description</Text>
-              <TextInput
-                value={portion}
-                onChangeText={setPortion}
-                style={styles.portionInput}
-                placeholder="e.g. 1 standard bowl / 350g"
-                placeholderTextColor={PALETTE[400]}
+            ))}
+          </View>
+          <TouchableOpacity
+            accessibilityRole="button"
+            disabled={busy}
+            onPress={() => void pick()}
+            style={styles.photoButton}
+          >
+            {photo ? (
+              <Image
+                source={{ uri: photo }}
+                style={styles.photo}
+                accessibilityLabel="Attached meal photo"
+                cachePolicy="memory-disk"
               />
-            </View>
-
-            {/* Action Buttons: Log / Save & Delete */}
-            <View style={styles.bottomButtonsRow}>
-              {editingEntry?.id && onDeleteEntry ? (
+            ) : (
+              <Camera size={22} color={JOURNAL.accent} />
+            )}
+            <Text style={styles.text}>
+              {photo ? 'Change meal photo' : 'Add a photo (optional)'}
+            </Text>
+          </TouchableOpacity>
+          <View style={styles.notesHeader}>
+            <Text style={styles.section}>Ingredient notes</Text>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Add ingredient note"
+              style={styles.iconButton}
+              onPress={() =>
+                setNotes((all) => [
+                  ...all,
+                  { item: '', portion: '', calories: '0' },
+                ])
+              }
+            >
+              <Plus size={20} color={JOURNAL.accent} />
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.caption}>
+            Notes are separate from your meal’s total nutrition.
+          </Text>
+          {notes.map((note, index) => (
+            <View key={index} style={styles.note}>
+              <TextInput
+                accessibilityLabel={`Ingredient ${index + 1} name`}
+                placeholder="Ingredient"
+                value={note.item}
+                onChangeText={(v) => changeNote(index, 'item', v)}
+                style={styles.input}
+              />
+              <View style={styles.noteRow}>
+                <TextInput
+                  accessibilityLabel={`Ingredient ${index + 1} portion`}
+                  placeholder="Portion"
+                  value={note.portion}
+                  onChangeText={(v) => changeNote(index, 'portion', v)}
+                  style={[styles.input, { flex: 1 }]}
+                />
+                <TextInput
+                  accessibilityLabel={`Ingredient ${index + 1} calories`}
+                  keyboardType="decimal-pad"
+                  value={note.calories}
+                  onChangeText={(v) => changeNote(index, 'calories', v)}
+                  style={[styles.input, { width: 80 }]}
+                />
                 <TouchableOpacity
-                  style={styles.deleteMealBtn}
-                  onPress={handleDeleteEntry}
-                  activeOpacity={0.85}>
-                  <Trash2 size={16} color="#DC2626" />
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remove ingredient ${index + 1}`}
+                  onPress={() =>
+                    setNotes((all) => all.filter((_, i) => i !== index))
+                  }
+                  style={styles.iconButton}
+                >
+                  <Trash2 size={18} color={JOURNAL.muted} />
                 </TouchableOpacity>
-              ) : null}
-
-              <TouchableOpacity style={styles.confirmBtn} onPress={handleSave} activeOpacity={0.85}>
-                <Check size={18} color={PALETTE[50]} />
-                <Text style={styles.confirmBtnText}>
-                  {editingEntry?.id ? 'Save Changes' : 'Log This Meal'}
-                </Text>
-              </TouchableOpacity>
+              </View>
             </View>
-
-            <View style={{ height: 30 }} />
-          </ScrollView>
-        </View>
-      </View>
+          ))}
+          <TouchableOpacity
+            accessibilityRole="button"
+            disabled={busy}
+            onPress={() =>
+              void run(async () => {
+                const data = build();
+                data.imageUri = await persistMealPhoto(data.imageUri);
+                await toggleFavoriteMeal(data);
+              })
+            }
+            style={styles.favorite}
+          >
+            <Heart size={18} color={JOURNAL.accent} />
+            <Text style={styles.text}>
+              {isFavoriteMeal(name)
+                ? 'Remove from favorites'
+                : 'Save to favorites'}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            accessibilityRole="button"
+            disabled={busy}
+            onPress={() => void save()}
+            style={[styles.primary, busy && styles.disabled]}
+          >
+            {busy ? (
+              <ActivityIndicator
+                color={JOURNAL.surface}
+                accessibilityLabel="Saving meal"
+              />
+            ) : (
+              <Text style={styles.primaryText}>
+                {editingEntry ? 'Save changes' : 'Save meal'}
+              </Text>
+            )}
+          </TouchableOpacity>
+          {editingEntry && onDeleteEntry ? (
+            <View>
+              {confirmDelete ? (
+                <View style={styles.deletion}>
+                  <Text style={styles.text}>
+                    Delete this meal from your journal?
+                  </Text>
+                  <View style={styles.slots}>
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      disabled={busy}
+                      style={styles.slot}
+                      onPress={() => setConfirmDelete(false)}
+                    >
+                      <Text style={styles.text}>Keep meal</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      disabled={busy}
+                      style={styles.slot}
+                      onPress={() =>
+                        void run(async () => {
+                          await onDeleteEntry(editingEntry.id);
+                          onClose();
+                        })
+                      }
+                    >
+                      <Text style={styles.error}>Delete meal</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  disabled={busy}
+                  style={styles.favorite}
+                  onPress={() => setConfirmDelete(true)}
+                >
+                  <Trash2 size={18} color={JOURNAL.error} />
+                  <Text style={styles.error}>Delete meal</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          ) : null}
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
-
-export function MealResultModal(props: MealResultModalProps) {
+export function MealResultModal(props: Props) {
   if (!props.visible) return null;
-
-  const contentKey = props.editingEntry?.id || (props.result?.foodName ? 'result' : 'new');
-
   return (
-    <Modal visible={props.visible} animationType="slide" transparent onRequestClose={props.onClose}>
-      <MealResultModalContent key={contentKey} {...props} />
+    <Modal visible animationType="none" onRequestClose={props.onClose}>
+      <MealForm {...props} />
     </Modal>
   );
 }
-
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: PALETTE[950],
-  },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'android' ? 36 : 48,
-    paddingBottom: 12,
-    zIndex: 10,
-  },
-  topIconBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(218, 237, 235, 0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  topBarTitle: {
-    fontFamily: FONTS.serif,
-    fontSize: 17,
-    fontWeight: '700',
-    color: PALETTE[50],
-  },
-  changePhotoHeaderBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(218, 237, 235, 0.15)',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 14,
-  },
-  changePhotoHeaderText: {
-    fontFamily: FONTS.sans,
-    fontSize: 11,
-    fontWeight: '700',
-    color: PALETTE[50],
-  },
-  imageWrapper: {
-    height: 180,
+  page: { flex: 1, backgroundColor: JOURNAL.paper },
+  body: {
+    padding: 24,
+    paddingBottom: 40,
+    maxWidth: 460,
     width: '100%',
-    position: 'relative',
+    alignSelf: 'center',
   },
-  topImage: {
-    width: '100%',
-    height: '100%',
-  },
-  changePhotoBadge: {
-    position: 'absolute',
-    bottom: 12,
-    right: 16,
-    backgroundColor: 'rgba(16, 33, 35, 0.85)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
+  header: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    borderWidth: 1,
-    borderColor: PALETTE[200],
-  },
-  changePhotoBadgeText: {
-    fontFamily: FONTS.sans,
-    fontSize: 10,
-    fontWeight: '700',
-    color: PALETTE[50],
-  },
-  sheetContainer: {
-    flex: 1,
-    backgroundColor: PALETTE.white,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    marginTop: -20,
-    overflow: 'hidden',
-  },
-  scrollBody: {
-    flex: 1,
-    paddingHorizontal: 20,
-    paddingTop: 16,
-  },
-  databaseMatchSection: {
-    marginBottom: 14,
-    backgroundColor: PALETTE[50],
-    borderRadius: 14,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: PALETTE[100],
-  },
-  dbHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 6,
-  },
-  dbSectionTitle: {
-    fontFamily: FONTS.sans,
-    fontSize: 9,
-    fontWeight: '800',
-    color: PALETTE[700],
-    letterSpacing: 0.8,
-  },
-  searchBarBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: PALETTE.white,
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderWidth: 1,
-    borderColor: PALETTE[200],
-    marginBottom: 8,
-  },
-  searchBarInput: {
-    flex: 1,
-    fontFamily: FONTS.sans,
-    fontSize: 12,
-    color: PALETTE[950],
-    padding: 0,
-  },
-  presetsList: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  foodChipBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 10,
-    backgroundColor: PALETTE.white,
-    borderWidth: 1,
-    borderColor: PALETTE[200],
-  },
-  foodChipBtnActive: {
-    borderColor: PALETTE[950],
-    backgroundColor: PALETTE[100],
-  },
-  foodChipThumb: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
-  },
-  foodChipText: {
-    fontFamily: FONTS.serif,
-    fontSize: 11,
-    fontWeight: '700',
-    color: PALETTE[950],
-    maxWidth: 150,
-  },
-  foodChipTextActive: {
-    color: PALETTE[950],
-  },
-  foodChipSub: {
-    fontFamily: FONTS.sans,
-    fontSize: 9,
-    color: PALETTE[600],
-    fontWeight: '600',
-  },
-  mealTypeRow: {
-    flexDirection: 'row',
-    gap: 6,
-    marginBottom: 12,
-  },
-  mealTypePill: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 7,
-    borderRadius: 8,
-    backgroundColor: PALETTE[50],
-    borderWidth: 1,
-    borderColor: PALETTE[100],
-  },
-  mealTypePillActive: {
-    backgroundColor: PALETTE[950],
-    borderColor: PALETTE[950],
-  },
-  mealTypeText: {
-    fontFamily: FONTS.sans,
-    fontSize: 11,
-    fontWeight: '700',
-    color: PALETTE[600],
-  },
-  mealTypeTextActive: {
-    color: PALETTE[50],
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  timeTag: {
-    fontFamily: FONTS.sans,
-    fontSize: 10,
-    color: PALETTE[400],
-    fontWeight: '600',
-  },
-  foodNameInput: {
-    fontFamily: FONTS.serif,
-    fontSize: 20,
-    fontWeight: '700',
-    color: PALETTE[950],
-    padding: 0,
-    marginTop: 2,
-    borderBottomWidth: 1,
-    borderBottomColor: PALETTE[100],
-  },
-  stepperBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: PALETTE[50],
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: PALETTE[100],
-    paddingHorizontal: 6,
-    paddingVertical: 4,
-    gap: 8,
-  },
-  stepBtn: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: PALETTE.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepperVal: {
-    fontFamily: FONTS.sans,
-    fontSize: 13,
-    fontWeight: '700',
-    color: PALETTE[950],
-  },
-  calorieHeroCard: {
-    flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: PALETTE[50],
+  },
+  title: { fontFamily: FONTS.serif, fontSize: 30, color: JOURNAL.ink, flex: 1 },
+  iconButton: {
+    minWidth: 48,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  caption: { fontSize: 14, lineHeight: 22, color: JOURNAL.muted },
+  label: { fontSize: 14, color: JOURNAL.muted, marginBottom: 8, marginTop: 20 },
+  input: {
+    minHeight: 48,
+    borderWidth: 1,
+    borderColor: JOURNAL.line,
+    backgroundColor: JOURNAL.surface,
     borderRadius: 12,
     padding: 12,
+    fontSize: 16,
+    color: JOURNAL.ink,
+  },
+  text: { fontSize: 16, color: JOURNAL.ink, lineHeight: 24 },
+  slots: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  slot: {
+    padding: 12,
+    minHeight: 48,
+    borderRadius: 12,
+    backgroundColor: JOURNAL.surface,
     borderWidth: 1,
-    borderColor: PALETTE[100],
-    marginBottom: 8,
-  },
-  quickCalPillsRow: {
-    flexDirection: 'row',
-    gap: 6,
-    marginBottom: 10,
-  },
-  quickCalPill: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    backgroundColor: PALETTE[50],
-    borderWidth: 1,
-    borderColor: PALETTE[100],
-  },
-  quickCalPillText: {
-    fontFamily: FONTS.sans,
-    fontSize: 10,
-    fontWeight: '700',
-    color: PALETTE[700],
-  },
-  quickCalPillAuto: {
-    marginLeft: 'auto',
-    backgroundColor: PALETTE[100],
-    borderColor: PALETTE[200],
-  },
-  quickCalPillAutoText: {
-    fontFamily: FONTS.sans,
-    fontSize: 10,
-    fontWeight: '700',
-    color: PALETTE[950],
-  },
-  calIconBox: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
-    backgroundColor: PALETTE[100],
-    alignItems: 'center',
+    borderColor: JOURNAL.line,
     justifyContent: 'center',
   },
-  calLabel: {
-    fontFamily: FONTS.sans,
-    fontSize: 10,
-    fontWeight: '700',
-    color: PALETTE[600],
-  },
-  calInputRow: {
+  selected: { backgroundColor: JOURNAL.soft, borderColor: JOURNAL.accent },
+  slotText: { fontSize: 14, color: JOURNAL.ink },
+  nutrition: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
+  field: { width: '47%' },
+  photoButton: {
+    marginTop: 24,
+    minHeight: 64,
     flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 4,
-  },
-  calInput: {
-    fontFamily: FONTS.serif,
-    fontSize: 24,
-    fontWeight: '700',
-    color: PALETTE[950],
-    padding: 0,
-  },
-  calUnitText: {
-    fontFamily: FONTS.sans,
-    fontSize: 12,
-    fontWeight: '600',
-    color: PALETTE[400],
-  },
-  macroColumnsRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 14,
-  },
-  macroCol: {
-    flex: 1,
-    backgroundColor: PALETTE[50],
-    borderRadius: 10,
-    padding: 8,
     alignItems: 'center',
+    gap: 16,
     borderWidth: 1,
-    borderColor: PALETTE[100],
+    borderColor: JOURNAL.line,
+    padding: 12,
+    borderRadius: 12,
   },
-  macroHeaderPill: {
+  photo: { width: 64, height: 64, borderRadius: 8 },
+  notesHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginBottom: 4,
-  },
-  macroColLabel: {
-    fontFamily: FONTS.sans,
-    fontSize: 10,
-    fontWeight: '700',
-    color: PALETTE[600],
-  },
-  macroInputRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 2,
-  },
-  macroColInput: {
-    fontFamily: FONTS.serif,
-    fontSize: 18,
-    fontWeight: '700',
-    color: PALETTE[950],
-    padding: 0,
-    textAlign: 'center',
-    minWidth: 32,
-  },
-  macroUnitText: {
-    fontFamily: FONTS.sans,
-    fontSize: 11,
-    color: PALETTE[400],
-    fontWeight: '600',
-  },
-  ingredientsHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  ingredientsTitle: {
-    fontFamily: FONTS.serif,
-    fontSize: 15,
-    fontWeight: '700',
-    color: PALETTE[950],
-  },
-  ingredientsSub: {
-    fontFamily: FONTS.sans,
-    fontSize: 10,
-    color: PALETTE[400],
-  },
-  addIngBtn: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: PALETTE[950],
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    marginTop: 24,
   },
-  addIngBtnText: {
-    fontFamily: FONTS.sans,
-    fontSize: 10,
-    fontWeight: '700',
-    color: PALETTE[50],
-  },
-  ingredientsList: {
+  section: { fontFamily: FONTS.serif, fontSize: 20, color: JOURNAL.ink },
+  note: {
+    marginTop: 16,
+    padding: 12,
+    backgroundColor: JOURNAL.soft,
+    borderRadius: 12,
     gap: 8,
-    marginBottom: 14,
   },
-  ingredientRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: PALETTE[50],
-    borderRadius: 10,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: PALETTE[100],
-  },
-  ingNameInput: {
-    fontFamily: FONTS.serif,
-    fontSize: 13,
-    fontWeight: '700',
-    color: PALETTE[950],
-    padding: 0,
-  },
-  ingPortionInput: {
-    fontFamily: FONTS.sans,
-    fontSize: 10,
-    color: PALETTE[600],
-    padding: 0,
-  },
-  ingCalBox: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 2,
-    backgroundColor: PALETTE.white,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: PALETTE[100],
-  },
-  ingCalInput: {
-    fontFamily: FONTS.serif,
-    fontSize: 13,
-    fontWeight: '700',
-    color: PALETTE[950],
-    padding: 0,
-    textAlign: 'right',
-  },
-  ingCalUnit: {
-    fontFamily: FONTS.sans,
-    fontSize: 9,
-    color: PALETTE[400],
-  },
-  ingDeleteBtn: {
-    padding: 4,
-  },
-  portionRow: {
-    marginBottom: 16,
-  },
-  portionLabel: {
-    fontFamily: FONTS.sans,
-    fontSize: 11,
-    fontWeight: '700',
-    color: PALETTE[800],
-    marginBottom: 4,
-  },
-  portionInput: {
-    backgroundColor: PALETTE[50],
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontFamily: FONTS.sans,
-    fontSize: 12,
-    color: PALETTE[950],
-    borderWidth: 1,
-    borderColor: PALETTE[100],
-  },
-  bottomButtonsRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  deleteMealBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    backgroundColor: '#FEE2E2',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  confirmBtn: {
-    flex: 1,
-    backgroundColor: PALETTE[950],
-    borderRadius: 14,
-    paddingVertical: 14,
+  noteRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  favorite: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
+    minHeight: 48,
+    marginTop: 20,
   },
-  confirmBtnText: {
-    fontFamily: FONTS.sans,
-    fontSize: 14,
-    fontWeight: '700',
-    color: PALETTE[50],
+  primary: {
+    minHeight: 52,
+    backgroundColor: JOURNAL.accent,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 24,
+  },
+  primaryText: { fontSize: 16, fontWeight: '600', color: JOURNAL.surface },
+  disabled: { opacity: 0.6 },
+  error: { color: JOURNAL.error, fontSize: 14, lineHeight: 22, marginTop: 12 },
+  deletion: { marginTop: 24 },
+  examples: { marginBottom: 8 },
+  example: {
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: JOURNAL.line,
   },
 });

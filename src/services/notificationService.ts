@@ -1,205 +1,69 @@
 import { Platform } from 'react-native';
-import { NotificationSettings } from '@/types/nutrition';
-
-/**
- * Unified Notification Service for Cal Tracker
- * Safely handles push & local notifications with graceful fallback for Expo Go on Android.
- */
-
-// Dynamically and safely load expo-notifications to prevent module crash in Expo Go on Android
-let Notifications: any = null;
-try {
-  // Expo Go on Android removed remote notification functionality in SDK 53+, throwing on load
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  Notifications = require('expo-notifications');
-  if (Notifications?.setNotificationHandler) {
-    Notifications.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldShowAlert: true,
-        shouldPlaySound: true,
-        shouldSetBadge: true,
-        shouldShowBanner: true,
-        shouldShowList: true,
-        priority: Notifications.AndroidNotificationPriority?.HIGH,
-      }),
-    });
-  }
-} catch {
-  // Gracefully fallback when running inside Expo Go on Android
-  Notifications = null;
-}
-
+import type { NotificationSettings, FoodEntry } from '@/types/nutrition';
+import { toLocalDateString, getTodayDateString } from './storage';
+// Native notifications are unavailable on the web and in some Expo Go builds.
+let Notifications: typeof import('expo-notifications') | null = null;
+if (Platform.OS !== 'web')
+    try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        Notifications = require('expo-notifications');
+        Notifications?.setNotificationHandler({ handleNotification: async () => ({ shouldPlaySound: true, shouldSetBadge: false, shouldShowBanner: true, shouldShowList: true }) });
+    }
+    catch {
+        Notifications = null;
+    }
 export async function requestNotificationPermissions(): Promise<boolean> {
-  if (Platform.OS === 'web' || !Notifications?.getPermissionsAsync) {
-    return false;
-  }
-
-  try {
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    let finalStatus = existingStatus;
-
-    if (existingStatus !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-    }
-
-    return finalStatus === 'granted';
-  } catch (error) {
-    console.warn('Notification permissions notice:', error);
-    return false;
-  }
+    if (!Notifications)
+        return false;
+    const current = await Notifications.getPermissionsAsync();
+    if (current.granted)
+        return true;
+    if (!current.canAskAgain)
+        return false;
+    return (await Notifications.requestPermissionsAsync()).granted;
 }
-
-export async function scheduleMealReminders(settings: NotificationSettings): Promise<void> {
-  if (Platform.OS === 'web' || !Notifications?.cancelAllScheduledNotificationsAsync) {
-    return;
-  }
-
-  try {
-    await Notifications.cancelAllScheduledNotificationsAsync();
-    if (!settings.enabled) return;
-
-    const granted = await requestNotificationPermissions();
-    if (!granted) return;
-
-    // 1. Breakfast Motivational Reminder
-    if (settings.breakfastReminder && settings.breakfastTime) {
-      const [parsedHour, parsedMinute] = settings.breakfastTime.split(':').map(Number);
-      const hour = Number.isFinite(parsedHour) ? parsedHour : 8;
-      const minute = Number.isFinite(parsedMinute) ? parsedMinute : 30;
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: '⚠️ You have not done this: Breakfast!',
-          body: 'Breakfast is still unlogged. Fuel up and track your morning calories to stay ahead!',
-          data: { screen: 'scan', mealType: 'breakfast' },
-          sound: true,
-        },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes?.DAILY || 'daily',
-          hour,
-          minute,
-        },
-      });
-    }
-
-    // 2. Midday Motivational Boost
-    if (settings.lunchReminder && settings.lunchTime) {
-      const [parsedHour, parsedMinute] = settings.lunchTime.split(':').map(Number);
-      const hour = Number.isFinite(parsedHour) ? parsedHour : 13;
-      const minute = Number.isFinite(parsedMinute) ? parsedMinute : 0;
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: '💪 You can do this!',
-          body: 'You are crushing your progress. Snap your lunch now to keep your protein on point.',
-          data: { screen: 'scan', mealType: 'lunch' },
-          sound: true,
-        },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes?.DAILY || 'daily',
-          hour,
-          minute,
-        },
-      });
-    }
-
-    // 3. Evening Pending Meal Reminder
-    if (settings.dinnerReminder && settings.dinnerTime) {
-      const [parsedHour, parsedMinute] = settings.dinnerTime.split(':').map(Number);
-      const hour = Number.isFinite(parsedHour) ? parsedHour : 19;
-      const minute = Number.isFinite(parsedMinute) ? parsedMinute : 30;
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: '🍽️ This is also not done: Dinner is pending!',
-          body: 'Log your evening dinner before you wind down so you lock in today’s nutrition targets.',
-          data: { screen: 'scan', mealType: 'dinner' },
-          sound: true,
-        },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes?.DAILY || 'daily',
-          hour,
-          minute,
-        },
-      });
-    }
-
-    // 4. Night Streak & Goal Completion Push
-    if (settings.streakReminder && settings.streakTime) {
-      const [parsedHour, parsedMinute] = settings.streakTime.split(':').map(Number);
-      const hour = Number.isFinite(parsedHour) ? parsedHour : 21;
-      const minute = Number.isFinite(parsedMinute) ? parsedMinute : 30;
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: '🔥 You can do this: Close your daily goals!',
-          body: 'Check your remaining macros and hydration before midnight to maintain your streak!',
-          data: { screen: 'index' },
-          sound: true,
-        },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes?.DAILY || 'daily',
-          hour,
-          minute,
-        },
-      });
-    }
-  } catch (error) {
-    console.warn('Failed to schedule notifications:', error);
-  }
-}
-
-export async function sendInstantStreakCelebration(streakCount: number): Promise<void> {
-  if (Platform.OS === 'web' || !Notifications?.scheduleNotificationAsync) {
-    return;
-  }
-
-  try {
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: `🏆 Goal Completed: ${streakCount}-Day Streak!`,
-        body: `You did it! Perfect macro balance locked in for today.`,
-        sound: true,
-      },
-      trigger: null,
+let scheduling: Promise<unknown> = Promise.resolve();
+export async function scheduleMealReminders(settings: NotificationSettings, entries: FoodEntry[] = []): Promise<void> {
+    const job = scheduling.then(async () => {
+        if (!Notifications)
+            return;
+        await Notifications.cancelAllScheduledNotificationsAsync();
+        if (!settings.enabled)
+            return;
+        if (!await requestNotificationPermissions())
+            throw new Error('Notifications are disabled for Cal Tracker in your device settings.');
+        const now = new Date(), today = getTodayDateString();
+        const reminders = [['breakfast', settings.breakfastReminder, settings.breakfastTime], ['lunch', settings.lunchReminder, settings.lunchTime], ['dinner', settings.dinnerReminder, settings.dinnerTime], ['daily', settings.streakReminder, settings.streakTime]] as const;
+        // Seven days of one-shot reminders let us suppress logged meals today.
+        for (let offset = 0; offset < 7; offset++)
+            for (const [meal, enabled, time] of reminders) {
+                if (!enabled)
+                    continue;
+                if (offset === 0 && meal !== 'daily' && entries.some(e => e.date === today && e.mealType === meal))
+                    continue;
+                if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))
+                    throw new Error('Enter reminder times as HH:MM.');
+                const [hour, minute] = time.split(':').map(Number), date = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset, hour, minute);
+                if (date <= now)
+                    continue;
+                await Notifications.scheduleNotificationAsync({ content: { title: meal === 'daily' ? 'Your daily check-in' : `Time to check your ${meal} log`, body: meal === 'daily' ? 'Review your meals and water for today.' : 'Record this meal if you had it, or review your log.', data: { screen: meal === 'daily' ? 'index' : 'scan', mealType: meal, date: toLocalDateString(date) }, sound: true }, trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date } });
+            }
     });
-  } catch (error) {
-    console.warn('Error triggering streak celebration notification:', error);
-  }
+    scheduling = job.catch(() => { });
+    return job;
 }
-
-export async function sendMotivationalGoalReminder(
-  type: 'unlogged' | 'almost_done' | 'hydration' | 'protein',
-  detail?: string
-): Promise<void> {
-  if (Platform.OS === 'web' || !Notifications?.scheduleNotificationAsync) {
-    return;
-  }
-
-  try {
-    let title = '💪 You can do this!';
-    let body = 'Take a second to log your progress and hit your daily goal.';
-
-    if (type === 'unlogged') {
-      title = '⚠️ You have not done this!';
-      body = detail ? `Your ${detail} is still unlogged. Tap to record it in 5 seconds.` : 'You have unlogged meals pending today!';
-    } else if (type === 'almost_done') {
-      title = '🎯 You are almost there!';
-      body = detail ? `Only ${detail} left to hit your daily calorie target. You got this!` : 'Just a few calories left to hit your goal!';
-    } else if (type === 'hydration') {
-      title = '💧 This is also not done: Hydration!';
-      body = detail ? `You still need ${detail} of water today. Stay hydrated!` : 'Don’t forget to log your water intake.';
-    } else if (type === 'protein') {
-      title = '🥩 Protein target pending!';
-      body = detail ? `Only ${detail} of protein left to lock in muscle recovery.` : 'Hit your protein goal before the day ends.';
-    }
-
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title,
-        body,
-        sound: true,
-      },
-      trigger: null,
-    });
-  } catch (error) {
-    console.warn('Error triggering motivational goal reminder:', error);
-  }
+export async function sendInstantStreakCelebration(streak: number): Promise<void> {
+    if (!Notifications)
+        return;
+    await Notifications.scheduleNotificationAsync({ content: { title: 'Daily calorie target reached', body: `${streak} day logging streak.`, data: { screen: 'index' }, sound: true }, trigger: null });
+}
+export function subscribeToReminderTaps(callback: (data: Record<string, unknown>) => void): () => void {
+    if (!Notifications)
+        return () => { };
+    const subscription = Notifications.addNotificationResponseReceivedListener(response => callback(response.notification.request.content.data ?? {}));
+    void Notifications.getLastNotificationResponseAsync().then(response => { if (response) {
+        callback(response.notification.request.content.data ?? {});
+        void Notifications?.clearLastNotificationResponseAsync();
+    } }).catch(() => { });
+    return () => subscription.remove();
 }

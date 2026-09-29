@@ -24,6 +24,9 @@ export interface FoodEntry {
   date: string;      // YYYY-MM-DD
   imageUri?: string;
   portionSize?: string;
+  ingredients?: { item: string; portion: string; calories: number }[];
+  source?: 'manual' | 'photo' | 'barcode' | 'label' | 'text';
+  imagePath?: string;
   confidence?: number;
   isAiGenerated?: boolean;
 }
@@ -124,6 +127,9 @@ export interface FavoriteMeal {
   mealType: MealType;
   portionSize?: string;
   imageUri?: string;
+  source?: FoodEntry['source'];
+  isAiGenerated?: boolean;
+  ingredients?: FoodEntry['ingredients'];
   createdAt: string;
 }
 

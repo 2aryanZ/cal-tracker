@@ -78,50 +78,61 @@ alter table public.weight_logs enable row level security;
 alter table public.water_logs enable row level security;
 
 -- Profiles: Users can view and update their own profile
+drop policy if exists "Users can view own profile" on public.user_profiles;
 create policy "Users can view own profile"
   on public.user_profiles for select
   using (auth.uid() = id);
 
+drop policy if exists "Users can update own profile" on public.user_profiles;
 create policy "Users can update own profile"
   on public.user_profiles for update
   using (auth.uid() = id);
 
+drop policy if exists "Users can insert own profile" on public.user_profiles;
 create policy "Users can insert own profile"
   on public.user_profiles for insert
   with check (auth.uid() = id);
 
 -- Macro Targets: Users can manage their targets
+drop policy if exists "Users can view own targets" on public.macro_targets;
 create policy "Users can view own targets"
   on public.macro_targets for select
   using (auth.uid() = user_id);
 
+drop policy if exists "Users can manage own targets" on public.macro_targets;
 create policy "Users can manage own targets"
   on public.macro_targets for all
   using (auth.uid() = user_id);
 
 -- Food Entries: Users can manage their own food entries
+drop policy if exists "Users can view own food entries" on public.food_entries;
 create policy "Users can view own food entries"
   on public.food_entries for select
   using (auth.uid() = user_id);
 
+drop policy if exists "Users can insert own food entries" on public.food_entries;
 create policy "Users can insert own food entries"
   on public.food_entries for insert
   with check (auth.uid() = user_id);
 
+drop policy if exists "Users can update own food entries" on public.food_entries;
 create policy "Users can update own food entries"
   on public.food_entries for update
   using (auth.uid() = user_id);
 
+drop policy if exists "Users can delete own food entries" on public.food_entries;
 create policy "Users can delete own food entries"
   on public.food_entries for delete
   using (auth.uid() = user_id);
 
 -- Weight Logs: Users can manage their own weight logs
+drop policy if exists "Users can manage own weight logs" on public.weight_logs;
 create policy "Users can manage own weight logs"
   on public.weight_logs for all
   using (auth.uid() = user_id);
 
 -- Water Logs: Users can manage their own water logs
+drop policy if exists "Users can manage own water logs" on public.water_logs;
 create policy "Users can manage own water logs"
   on public.water_logs for all
   using (auth.uid() = user_id);

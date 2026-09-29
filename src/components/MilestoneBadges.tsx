@@ -13,7 +13,7 @@ import {
   X,
 } from 'lucide-react-native';
 import { MilestoneBadge } from '@/types/nutrition';
-import { PALETTE, FONTS } from '@/constants/theme';
+import { PALETTE, FONTS, JOURNAL } from '@/constants/theme';
 import { triggerLightImpact } from '@/services/hapticsService';
 
 interface MilestoneBadgesProps {
@@ -21,25 +21,66 @@ interface MilestoneBadgesProps {
 }
 
 export function MilestoneBadges({ badges }: MilestoneBadgesProps) {
-  const [selectedBadge, setSelectedBadge] = useState<MilestoneBadge | null>(null);
+  const [selectedBadge, setSelectedBadge] = useState<MilestoneBadge | null>(
+    null,
+  );
 
-  const getBadgeIcon = (iconName: string, isUnlocked: boolean, color: string) => {
+  const getBadgeIcon = (
+    iconName: string,
+    isUnlocked: boolean,
+    color: string,
+  ) => {
     const size = 18;
     switch (iconName) {
       case 'flame':
-        return <Flame size={size} color={isUnlocked ? '#EA580C' : PALETTE[400]} fill={isUnlocked ? '#EA580C' : 'transparent'} />;
+        return (
+          <Flame
+            size={size}
+            color={isUnlocked ? JOURNAL.accentText : PALETTE[400]}
+            fill={isUnlocked ? JOURNAL.accentText : 'transparent'}
+          />
+        );
       case 'trophy':
-        return <Trophy size={size} color={isUnlocked ? '#D97706' : PALETTE[400]} fill={isUnlocked ? '#D97706' : 'transparent'} />;
+        return (
+          <Trophy
+            size={size}
+            color={isUnlocked ? JOURNAL.accentText : PALETTE[400]}
+            fill={isUnlocked ? JOURNAL.accentText : 'transparent'}
+          />
+        );
       case 'target':
-        return <Target size={size} color={isUnlocked ? '#059669' : PALETTE[400]} />;
+        return (
+          <Target
+            size={size}
+            color={isUnlocked ? JOURNAL.accentText : PALETTE[400]}
+          />
+        );
       case 'droplet':
-        return <Droplet size={size} color={isUnlocked ? '#0284C7' : PALETTE[400]} fill={isUnlocked ? '#0284C7' : 'transparent'} />;
+        return (
+          <Droplet
+            size={size}
+            color={isUnlocked ? JOURNAL.accentText : PALETTE[400]}
+            fill={isUnlocked ? JOURNAL.accentText : 'transparent'}
+          />
+        );
       case 'camera':
-        return <Camera size={size} color={isUnlocked ? PALETTE[950] : PALETTE[400]} />;
+        return (
+          <Camera
+            size={size}
+            color={isUnlocked ? PALETTE[950] : PALETTE[400]}
+          />
+        );
       case 'scale':
-        return <Scale size={size} color={isUnlocked ? '#7C3AED' : PALETTE[400]} />;
+        return (
+          <Scale
+            size={size}
+            color={isUnlocked ? JOURNAL.accentText : PALETTE[400]}
+          />
+        );
       default:
-        return <Award size={size} color={isUnlocked ? PALETTE[950] : PALETTE[400]} />;
+        return (
+          <Award size={size} color={isUnlocked ? PALETTE[950] : PALETTE[400]} />
+        );
     }
   };
 
@@ -48,29 +89,44 @@ export function MilestoneBadges({ badges }: MilestoneBadgesProps) {
   return (
     <View style={styles.container}>
       <View style={styles.headerRow}>
-        <View>
-          <Text style={styles.title}>Milestone Badges</Text>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={styles.title}>Milestones</Text>
           <Text style={styles.subtitle}>
-            {unlockedCount} of {badges.length} unlocked • Track consistency & goals
+            {unlockedCount} of {badges.length} unlocked • Track consistency &
+            goals
           </Text>
         </View>
         <View style={styles.trophyCountBadge}>
           <Trophy size={12} color={PALETTE[700]} />
-          <Text style={styles.trophyCountText}>{unlockedCount}/{badges.length}</Text>
+          <Text style={styles.trophyCountText}>
+            {unlockedCount}/{badges.length}
+          </Text>
         </View>
       </View>
 
       <View style={styles.badgeGrid}>
         {badges.map((badge) => (
           <TouchableOpacity
+            accessibilityRole="button"
             key={badge.id}
-            style={[styles.badgeCard, badge.isUnlocked && styles.badgeCardUnlocked]}
+            style={[
+              styles.badgeCard,
+              badge.isUnlocked && styles.badgeCardUnlocked,
+            ]}
             onPress={() => {
               triggerLightImpact();
               setSelectedBadge(badge);
             }}
-            activeOpacity={0.8}>
-            <View style={[styles.badgeIconWrapper, badge.isUnlocked ? styles.badgeIconUnlocked : styles.badgeIconLocked]}>
+            activeOpacity={0.8}
+          >
+            <View
+              style={[
+                styles.badgeIconWrapper,
+                badge.isUnlocked
+                  ? styles.badgeIconUnlocked
+                  : styles.badgeIconLocked,
+              ]}
+            >
               {getBadgeIcon(badge.icon, badge.isUnlocked, PALETTE[950])}
               {!badge.isUnlocked && (
                 <View style={styles.lockOverlay}>
@@ -79,9 +135,7 @@ export function MilestoneBadges({ badges }: MilestoneBadgesProps) {
               )}
             </View>
 
-            <Text style={styles.badgeTitle} numberOfLines={1}>
-              {badge.title}
-            </Text>
+            <Text style={styles.badgeTitle}>{badge.title}</Text>
 
             {/* Mini Progress Track */}
             <View style={styles.progressTrack}>
@@ -103,37 +157,64 @@ export function MilestoneBadges({ badges }: MilestoneBadgesProps) {
       <Modal
         visible={!!selectedBadge}
         transparent
-        animationType="fade"
-        onRequestClose={() => setSelectedBadge(null)}>
+        animationType="none"
+        onRequestClose={() => setSelectedBadge(null)}
+      >
         <TouchableOpacity
+          accessibilityRole="button"
           style={styles.modalOverlay}
           activeOpacity={1}
-          onPress={() => setSelectedBadge(null)}>
+          onPress={() => setSelectedBadge(null)}
+        >
           <View style={styles.modalCard}>
             {selectedBadge && (
               <>
                 <View style={styles.modalHeader}>
-                  <View style={[styles.modalIconBox, selectedBadge.isUnlocked ? styles.badgeIconUnlocked : styles.badgeIconLocked]}>
-                    {getBadgeIcon(selectedBadge.icon, selectedBadge.isUnlocked, PALETTE[950])}
+                  <View
+                    style={[
+                      styles.modalIconBox,
+                      selectedBadge.isUnlocked
+                        ? styles.badgeIconUnlocked
+                        : styles.badgeIconLocked,
+                    ]}
+                  >
+                    {getBadgeIcon(
+                      selectedBadge.icon,
+                      selectedBadge.isUnlocked,
+                      PALETTE[950],
+                    )}
                   </View>
-                  <TouchableOpacity onPress={() => setSelectedBadge(null)} style={styles.closeBtn}>
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel="Close milestone details"
+                    onPress={() => setSelectedBadge(null)}
+                    style={styles.closeBtn}
+                  >
                     <X size={16} color={PALETTE[600]} />
                   </TouchableOpacity>
                 </View>
 
-                <Text style={styles.modalBadgeTitle}>{selectedBadge.title}</Text>
-                <Text style={styles.modalBadgeDesc}>{selectedBadge.description}</Text>
+                <Text style={styles.modalBadgeTitle}>
+                  {selectedBadge.title}
+                </Text>
+                <Text style={styles.modalBadgeDesc}>
+                  {selectedBadge.description}
+                </Text>
 
                 <View style={styles.modalStatusRow}>
                   {selectedBadge.isUnlocked ? (
                     <View style={styles.unlockedTag}>
-                      <CheckCircle2 size={13} color="#059669" />
-                      <Text style={styles.unlockedTagText}>Milestone Achieved</Text>
+                      <CheckCircle2 size={13} color={JOURNAL.accentText} />
+                      <Text style={styles.unlockedTagText}>
+                        Milestone Achieved
+                      </Text>
                     </View>
                   ) : (
                     <View style={styles.lockedTag}>
                       <Lock size={12} color={PALETTE[600]} />
-                      <Text style={styles.lockedTagText}>In Progress ({selectedBadge.progressText})</Text>
+                      <Text style={styles.lockedTagText}>
+                        In Progress ({selectedBadge.progressText})
+                      </Text>
                     </View>
                   )}
                 </View>
@@ -183,7 +264,7 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontFamily: FONTS.sans,
-    fontSize: 11,
+    fontSize: 12,
     color: PALETTE[600],
     marginTop: 1,
   },
@@ -198,7 +279,7 @@ const styles = StyleSheet.create({
   },
   trophyCountText: {
     fontFamily: FONTS.sans,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: PALETTE[700],
   },
@@ -217,7 +298,7 @@ const styles = StyleSheet.create({
     borderColor: PALETTE[100],
   },
   badgeCardUnlocked: {
-    backgroundColor: '#F8FCFB',
+    backgroundColor: JOURNAL.surface,
     borderColor: PALETTE[200],
   },
   badgeIconWrapper: {
@@ -246,7 +327,7 @@ const styles = StyleSheet.create({
   },
   badgeTitle: {
     fontFamily: FONTS.serif,
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
     color: PALETTE[950],
     textAlign: 'center',
@@ -266,17 +347,17 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   progressFillUnlocked: {
-    backgroundColor: '#059669',
+    backgroundColor: JOURNAL.accentText,
   },
   progressText: {
     fontFamily: FONTS.sans,
-    fontSize: 8,
+    fontSize: 12,
     color: PALETTE[500],
     fontWeight: '600',
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(16, 33, 35, 0.65)',
+    backgroundColor: JOURNAL.scrim,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 24,
@@ -301,8 +382,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   closeBtn: {
-    width: 28,
-    height: 28,
+    width: 48,
+    height: 48,
     borderRadius: 14,
     backgroundColor: PALETTE[50],
     alignItems: 'center',
@@ -329,7 +410,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#ECFDF5',
+    backgroundColor: JOURNAL.soft,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 8,
@@ -337,9 +418,9 @@ const styles = StyleSheet.create({
   },
   unlockedTagText: {
     fontFamily: FONTS.sans,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
-    color: '#065F46',
+    color: JOURNAL.accentText,
   },
   lockedTag: {
     flexDirection: 'row',
@@ -353,7 +434,7 @@ const styles = StyleSheet.create({
   },
   lockedTagText: {
     fontFamily: FONTS.sans,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: PALETTE[700],
   },
@@ -371,7 +452,7 @@ const styles = StyleSheet.create({
   },
   modalProgressSub: {
     fontFamily: FONTS.sans,
-    fontSize: 10,
+    fontSize: 12,
     color: PALETTE[500],
     textAlign: 'right',
   },

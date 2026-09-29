@@ -1,152 +1,83 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { Text, StyleSheet, Animated, TouchableOpacity, Platform } from 'react-native';
-import { Bell, Flame, X, Utensils } from 'lucide-react-native';
-import { ToastNotification } from '@/types/nutrition';
-import { PALETTE, FONTS } from '@/constants/theme';
-
-interface NotificationToastProps {
+import React, { useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Info, X } from 'lucide-react-native';
+import type { ToastNotification } from '@/types/nutrition';
+import { JOURNAL } from '@/constants/theme';
+export function NotificationToast({
+  toast,
+  onDismiss,
+}: {
   toast: ToastNotification | null;
   onDismiss: () => void;
-}
-
-export function NotificationToast({ toast, onDismiss }: NotificationToastProps) {
-  const [translateY] = useState(() => new Animated.Value(-120));
-  const [opacity] = useState(() => new Animated.Value(0));
-
-  const handleClose = useCallback(() => {
-    Animated.parallel([
-      Animated.timing(translateY, {
-        toValue: -120,
-        duration: 250,
-        useNativeDriver: true,
-      }),
-      Animated.timing(opacity, {
-        toValue: 0,
-        duration: 200,
-        useNativeDriver: true,
-      }),
-    ]).start(() => {
-      onDismiss();
-    });
-  }, [onDismiss, opacity, translateY]);
-
+}) {
+  const insets = useSafeAreaInsets();
   useEffect(() => {
-    if (toast) {
-      Animated.parallel([
-        Animated.spring(translateY, {
-          toValue: 0,
-          friction: 7,
-          tension: 40,
-          useNativeDriver: true,
-        }),
-        Animated.timing(opacity, {
-          toValue: 1,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-      ]).start();
-
-      const timer = setTimeout(() => {
-        handleClose();
-      }, 4500);
-
-      return () => clearTimeout(timer);
-    }
-  }, [toast, handleClose, opacity, translateY]);
-
+    if (!toast) return;
+    const timer = setTimeout(onDismiss, 6000);
+    return () => clearTimeout(timer);
+  }, [toast, onDismiss]);
   if (!toast) return null;
-
-  const renderIcon = () => {
-    switch (toast.icon) {
-      case 'flame':
-        return <Flame size={18} color="#EA580C" fill="#EA580C" />;
-      case 'utensils':
-        return <Utensils size={18} color={PALETTE[700]} />;
-      default:
-        return <Bell size={18} color={PALETTE[950]} />;
-    }
-  };
-
   return (
-    <Animated.View
-      style={[
-        styles.toastContainer,
-        {
-          transform: [{ translateY }],
-          opacity,
-        },
-      ]}>
-      <TouchableOpacity style={styles.toastCard} onPress={handleClose} activeOpacity={0.9}>
-        <Animated.View style={styles.iconBox}>{renderIcon()}</Animated.View>
-        <Animated.View style={styles.textBox}>
-          <Text style={styles.titleText}>{toast.title}</Text>
-          <Text style={styles.bodyText} numberOfLines={2}>
-            {toast.message}
-          </Text>
-        </Animated.View>
-        <TouchableOpacity style={styles.closeBtn} onPress={handleClose}>
-          <X size={14} color={PALETTE[400]} />
+    <View
+      style={[styles.container, { top: insets.top + 8 }]}
+      accessibilityLiveRegion="polite"
+    >
+      <View style={styles.card}>
+        <Info size={18} color={JOURNAL.accent} />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.title}>{toast.title}</Text>
+          <Text style={styles.message}>{toast.message}</Text>
+        </View>
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Dismiss notification"
+          onPress={onDismiss}
+          style={styles.close}
+        >
+          <X size={18} color={JOURNAL.muted} />
         </TouchableOpacity>
-      </TouchableOpacity>
-    </Animated.View>
+      </View>
+    </View>
   );
 }
-
 const styles = StyleSheet.create({
-  toastContainer: {
+  container: {
     position: 'absolute',
-    top: Platform.OS === 'android' ? 44 : 54,
-    left: 16,
-    right: 16,
+    left: 12,
+    right: 12,
     zIndex: 9999,
-    elevation: 9999,
+    elevation: 10,
     alignItems: 'center',
   },
-  toastCard: {
+  card: {
     width: '100%',
-    maxWidth: 420,
-    backgroundColor: PALETTE.white,
-    borderRadius: 16,
-    padding: 12,
+    maxWidth: 436,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    backgroundColor: JOURNAL.surface,
     borderWidth: 1,
-    borderColor: PALETTE[100],
-    shadowColor: PALETTE[950],
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    elevation: 10,
+    borderColor: JOURNAL.line,
+    borderRadius: 16,
+    paddingLeft: 16,
+    paddingVertical: 8,
+    shadowColor: JOURNAL.ink,
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
   },
-  iconBox: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: PALETTE[50],
+  title: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: JOURNAL.ink,
+    lineHeight: 22,
+  },
+  message: { fontSize: 13, lineHeight: 20, color: JOURNAL.muted },
+  close: {
+    width: 48,
+    minHeight: 48,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: PALETTE[100],
-  },
-  textBox: {
-    flex: 1,
-    gap: 2,
-  },
-  titleText: {
-    fontFamily: FONTS.serif,
-    fontSize: 14,
-    fontWeight: '700',
-    color: PALETTE[950],
-  },
-  bodyText: {
-    fontFamily: FONTS.sans,
-    fontSize: 12,
-    color: PALETTE[700],
-    lineHeight: 16,
-  },
-  closeBtn: {
-    padding: 4,
-    borderRadius: 8,
   },
 });

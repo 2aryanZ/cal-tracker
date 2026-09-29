@@ -6,308 +6,231 @@ import {
   Modal,
   TouchableOpacity,
   TextInput,
+  ActivityIndicator,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
-import { X, Scale, Check } from 'lucide-react-native';
-import { PALETTE, FONTS } from '@/constants/theme';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { X } from 'lucide-react-native';
+import { JOURNAL, FONTS } from '@/constants/theme';
 import { lbsToKg, kgToLbs } from '@/services/tdeeCalculator';
 import { getTodayDateString } from '@/services/storage';
-
-interface WeightLogModalProps {
+import { validateWeight } from '@/services/nutritionRules';
+interface Props {
   visible: boolean;
   onClose: () => void;
   currentWeightKg: number;
   initialUnit?: 'lbs' | 'kg';
-  onSave: (data: { weightKg: number; weightLbs: number; date: string; note?: string }) => void;
+  onSave: (data: {
+    weightKg: number;
+    weightLbs: number;
+    date: string;
+    note?: string;
+  }) => void | Promise<void>;
 }
-
-function WeightLogModalContent({
+function WeightForm({
   onClose,
   currentWeightKg,
   initialUnit = 'kg',
   onSave,
-}: Omit<WeightLogModalProps, 'visible'>) {
-  const [unit, setUnit] = useState<'lbs' | 'kg'>(initialUnit);
-  const [weightLbs, setWeightLbs] = useState(String(kgToLbs(currentWeightKg || 78)));
-  const [weightKg, setWeightKg] = useState(String(Math.round((currentWeightKg || 78) * 10) / 10));
-  const [date, setDate] = useState(getTodayDateString());
-  const [note, setNote] = useState('Morning weigh-in');
-
-  const handleUnitToggle = (newUnit: 'lbs' | 'kg') => {
-    if (newUnit === unit) return;
-    if (newUnit === 'lbs') {
-      const kg = Number(weightKg) || 78;
-      setWeightLbs(String(kgToLbs(kg)));
-    } else {
-      const lbs = Number(weightLbs) || 165;
-      setWeightKg(String(lbsToKg(lbs)));
-    }
-    setUnit(newUnit);
+}: Omit<Props, 'visible'>) {
+  const [unit, setUnit] = useState(initialUnit),
+    [value, setValue] = useState(
+      String(initialUnit === 'kg' ? currentWeightKg : kgToLbs(currentWeightKg)),
+    ),
+    [date, setDate] = useState(getTodayDateString()),
+    [note, setNote] = useState(''),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState('');
+  const changeUnit = (next: 'kg' | 'lbs') => {
+    if (next === unit) return;
+    if (value.trim() && Number.isFinite(Number(value)))
+      setValue(
+        String(next === 'kg' ? lbsToKg(Number(value)) : kgToLbs(Number(value))),
+      );
+    setUnit(next);
   };
-
-  const handleSave = () => {
-    let finalKg = Number(weightKg) || 78;
-    let finalLbs = Number(weightLbs) || 165;
-
-    if (unit === 'lbs') {
-      finalKg = lbsToKg(finalLbs);
-    } else {
-      finalLbs = kgToLbs(finalKg);
+  const save = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      if (!value.trim()) throw new Error('Enter your weight.');
+      const kg = unit === 'kg' ? Number(value) : lbsToKg(Number(value));
+      validateWeight({ date, weightKg: kg });
+      await onSave({
+        weightKg: kg,
+        weightLbs: kgToLbs(kg),
+        date,
+        note: note.trim() || undefined,
+      });
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unable to save weight.');
+    } finally {
+      setBusy(false);
     }
-
-    onSave({
-      weightKg: finalKg,
-      weightLbs: finalLbs,
-      date,
-      note: note.trim() || undefined,
-    });
-    onClose();
   };
-
   return (
-    <View style={styles.modalOverlay}>
-      <View style={styles.modalCard}>
-        {/* Header */}
-        <View style={styles.modalHeader}>
-            <View style={styles.titleRow}>
-              <Scale size={18} color={PALETTE[950]} />
-              <Text style={styles.modalTitle}>Record Weigh-in</Text>
-            </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <X size={16} color={PALETTE[600]} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Unit Toggle */}
-          <View style={styles.unitToggleRow}>
+    <SafeAreaView style={styles.page}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.body}
+        >
+          <View style={styles.header}>
+            <Text style={styles.title}>Log your weight</Text>
             <TouchableOpacity
-              style={[styles.unitBtn, unit === 'lbs' && styles.unitBtnActive]}
-              onPress={() => handleUnitToggle('lbs')}>
-              <Text style={[styles.unitBtnText, unit === 'lbs' && styles.unitBtnTextActive]}>
-                Pounds (lbs)
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.unitBtn, unit === 'kg' && styles.unitBtnActive]}
-              onPress={() => handleUnitToggle('kg')}>
-              <Text style={[styles.unitBtnText, unit === 'kg' && styles.unitBtnTextActive]}>
-                Kilograms (kg)
-              </Text>
+              accessibilityRole="button"
+              accessibilityLabel="Close weigh-in"
+              disabled={busy}
+              onPress={onClose}
+              style={styles.close}
+            >
+              <X size={22} color={JOURNAL.ink} />
             </TouchableOpacity>
           </View>
-
-          {/* Weight Input Box */}
-          <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>ENTER BODY WEIGHT</Text>
-            <View style={styles.inputRow}>
-              <TextInput
-                value={unit === 'lbs' ? weightLbs : weightKg}
-                onChangeText={(v) => {
-                  if (unit === 'lbs') {
-                    setWeightLbs(v);
-                    setWeightKg(String(lbsToKg(Number(v) || 0)));
-                  } else {
-                    setWeightKg(v);
-                    setWeightLbs(String(kgToLbs(Number(v) || 0)));
-                  }
-                }}
-                keyboardType="numeric"
-                style={styles.weightTextInput}
-                autoFocus
-              />
-              <Text style={styles.unitSuffixText}>{unit}</Text>
-            </View>
+          <Text style={styles.caption}>
+            Record a weigh-in at your own pace.
+          </Text>
+          {error ? (
+            <Text accessibilityRole="alert" style={styles.error}>
+              {error}
+            </Text>
+          ) : null}
+          <View style={styles.units}>
+            {(['kg', 'lbs'] as const).map((u) => (
+              <TouchableOpacity
+                key={u}
+                accessibilityRole="button"
+                accessibilityState={{ selected: unit === u }}
+                style={[styles.unit, unit === u && styles.active]}
+                onPress={() => changeUnit(u)}
+              >
+                <Text style={styles.text}>
+                  {u === 'kg' ? 'Kilograms (kg)' : 'Pounds (lbs)'}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
-
-          {/* Date & Note Row */}
-          <View style={styles.metaRow}>
-            <View style={styles.metaCol}>
-              <Text style={styles.metaLabel}>DATE</Text>
-              <TextInput
-                value={date}
-                onChangeText={setDate}
-                style={styles.metaInput}
-                placeholder="YYYY-MM-DD"
+          <Text style={styles.label}>Body weight ({unit})</Text>
+          <TextInput
+            accessibilityLabel={`Body weight (${unit})`}
+            keyboardType="decimal-pad"
+            value={value}
+            onChangeText={setValue}
+            style={styles.input}
+          />
+          <Text style={styles.label}>Date</Text>
+          <TextInput
+            accessibilityLabel="Weigh-in date"
+            value={date}
+            onChangeText={setDate}
+            placeholder="YYYY-MM-DD"
+            style={styles.input}
+          />
+          <Text style={styles.label}>Note (optional)</Text>
+          <TextInput
+            accessibilityLabel="Weigh-in note"
+            value={note}
+            onChangeText={setNote}
+            placeholder="For example, before breakfast"
+            multiline
+            style={styles.input}
+          />
+          <TouchableOpacity
+            accessibilityRole="button"
+            disabled={busy}
+            onPress={() => void save()}
+            style={[styles.save, busy && { opacity: 0.6 }]}
+          >
+            {busy ? (
+              <ActivityIndicator
+                accessibilityLabel="Saving weigh-in"
+                color={JOURNAL.surface}
               />
-            </View>
-            <View style={styles.metaCol}>
-              <Text style={styles.metaLabel}>CONTEXT NOTE</Text>
-              <TextInput
-                value={note}
-                onChangeText={setNote}
-                style={styles.metaInput}
-                placeholder="e.g. Fasted morning"
-              />
-            </View>
-          </View>
-
-          {/* Save Button */}
-          <TouchableOpacity style={styles.saveBtn} onPress={handleSave} activeOpacity={0.85}>
-            <Check size={16} color={PALETTE[50]} />
-            <Text style={styles.saveBtnText}>Save Entry</Text>
+            ) : (
+              <Text style={styles.saveText}>Save Entry</Text>
+            )}
           </TouchableOpacity>
-        </View>
-      </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
-
-export function WeightLogModal(props: WeightLogModalProps) {
+export function WeightLogModal(props: Props) {
   if (!props.visible) return null;
-
   return (
-    <Modal visible={props.visible} transparent animationType="fade" onRequestClose={props.onClose}>
-      <WeightLogModalContent {...props} />
+    <Modal visible animationType="none" onRequestClose={props.onClose}>
+      <WeightForm {...props} />
     </Modal>
   );
 }
-
 const styles = StyleSheet.create({
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(16, 33, 35, 0.65)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-  modalCard: {
-    backgroundColor: PALETTE.white,
-    borderRadius: 16,
-    padding: 20,
+  page: { flex: 1, backgroundColor: JOURNAL.paper },
+  body: {
+    padding: 24,
+    paddingBottom: 40,
+    maxWidth: 460,
     width: '100%',
-    maxWidth: 340,
-    borderWidth: 1,
-    borderColor: PALETTE[100],
-    shadowColor: PALETTE[950],
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 6,
+    alignSelf: 'center',
   },
-  modalHeader: {
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 14,
+    gap: 12,
   },
-  titleRow: {
-    flexDirection: 'row',
+  title: { fontFamily: FONTS.serif, fontSize: 30, color: JOURNAL.ink, flex: 1 },
+  close: {
+    width: 48,
+    minHeight: 48,
     alignItems: 'center',
-    gap: 6,
+    justifyContent: 'center',
   },
-  modalTitle: {
-    fontFamily: FONTS.serif,
+  caption: {
+    fontSize: 14,
+    color: JOURNAL.muted,
+    lineHeight: 22,
+    marginTop: 12,
+  },
+  units: { flexDirection: 'row', gap: 12, flexWrap: 'wrap', marginTop: 24 },
+  unit: {
+    minHeight: 48,
+    padding: 12,
+    borderRadius: 12,
+    justifyContent: 'center',
+    backgroundColor: JOURNAL.surface,
+  },
+  active: {
+    backgroundColor: JOURNAL.soft,
+    borderWidth: 1,
+    borderColor: JOURNAL.line,
+  },
+  text: { fontSize: 15, color: JOURNAL.ink },
+  label: { fontSize: 14, color: JOURNAL.muted, marginTop: 24, marginBottom: 8 },
+  input: {
+    minHeight: 52,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: JOURNAL.line,
+    borderRadius: 12,
+    backgroundColor: JOURNAL.surface,
     fontSize: 16,
-    fontWeight: '700',
-    color: PALETTE[950],
+    color: JOURNAL.ink,
   },
-  closeBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: PALETTE[50],
+  save: {
+    minHeight: 52,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  unitToggleRow: {
-    flexDirection: 'row',
-    backgroundColor: PALETTE[100],
-    borderRadius: 10,
-    padding: 3,
-    marginBottom: 14,
-  },
-  unitBtn: {
-    flex: 1,
-    paddingVertical: 7,
-    alignItems: 'center',
-    borderRadius: 8,
-  },
-  unitBtnActive: {
-    backgroundColor: PALETTE.white,
-  },
-  unitBtnText: {
-    fontFamily: FONTS.sans,
-    fontSize: 11,
-    fontWeight: '700',
-    color: PALETTE[600],
-  },
-  unitBtnTextActive: {
-    color: PALETTE[950],
-  },
-  inputContainer: {
-    backgroundColor: PALETTE[50],
+    backgroundColor: JOURNAL.accent,
     borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: PALETTE[100],
-    marginBottom: 12,
+    marginTop: 32,
   },
-  inputLabel: {
-    fontFamily: FONTS.sans,
-    fontSize: 9,
-    fontWeight: '800',
-    color: PALETTE[600],
-    letterSpacing: 0.8,
-    marginBottom: 4,
-  },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
-  },
-  weightTextInput: {
-    fontFamily: FONTS.serif,
-    fontSize: 32,
-    fontWeight: '700',
-    color: PALETTE[950],
-    flex: 1,
-    padding: 0,
-  },
-  unitSuffixText: {
-    fontFamily: FONTS.sans,
-    fontSize: 15,
-    fontWeight: '700',
-    color: PALETTE[500],
-  },
-  metaRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 16,
-  },
-  metaCol: {
-    flex: 1,
-  },
-  metaLabel: {
-    fontFamily: FONTS.sans,
-    fontSize: 9,
-    fontWeight: '800',
-    color: PALETTE[600],
-    letterSpacing: 0.8,
-    marginBottom: 3,
-  },
-  metaInput: {
-    backgroundColor: PALETTE[50],
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    fontFamily: FONTS.sans,
-    fontSize: 11,
-    color: PALETTE[950],
-    borderWidth: 1,
-    borderColor: PALETTE[100],
-  },
-  saveBtn: {
-    backgroundColor: PALETTE[950],
-    borderRadius: 12,
-    paddingVertical: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  saveBtnText: {
-    fontFamily: FONTS.sans,
-    fontSize: 13,
-    fontWeight: '700',
-    color: PALETTE[50],
-  },
+  saveText: { fontSize: 16, fontWeight: '600', color: JOURNAL.surface },
+  error: { color: JOURNAL.error, fontSize: 14, lineHeight: 22, marginTop: 16 },
 });

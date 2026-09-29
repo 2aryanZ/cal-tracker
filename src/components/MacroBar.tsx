@@ -86,7 +86,7 @@ const styles = StyleSheet.create({
     color: '#F8FAFC',
   },
   leftLabel: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '500',
     color: '#94A3B8',
   },
@@ -112,12 +112,12 @@ const styles = StyleSheet.create({
     color: '#F1F5F9',
   },
   target: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '400',
     color: '#64748B',
   },
   percent: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
   },
 });

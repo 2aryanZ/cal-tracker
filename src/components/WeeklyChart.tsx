@@ -75,7 +75,7 @@ export const WeeklyChart = React.memo(function WeeklyChart({
           else if (day.totalCal === 0) barColor = PALETTE[200];
 
           return (
-            <TouchableOpacity
+            <TouchableOpacity accessibilityRole="button"
               key={day.dateStr}
               style={styles.barColumn}
               onPress={() => onSelectDate(day.dateStr)}
@@ -152,7 +152,7 @@ const styles = StyleSheet.create({
   },
   goalPill: {
     fontFamily: FONTS.sans,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
     color: PALETTE[700],
     backgroundColor: PALETTE[50],
@@ -177,7 +177,7 @@ const styles = StyleSheet.create({
   },
   barValue: {
     fontFamily: FONTS.sans,
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '600',
     color: PALETTE[400],
     marginBottom: 6,
@@ -216,7 +216,7 @@ const styles = StyleSheet.create({
   },
   dayLabelText: {
     fontFamily: FONTS.sans,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     color: PALETTE[600],
   },
@@ -230,7 +230,7 @@ const styles = StyleSheet.create({
   },
   dayNumText: {
     fontFamily: FONTS.sans,
-    fontSize: 9,
+    fontSize: 12,
     fontWeight: '500',
     color: PALETTE[400],
   },
