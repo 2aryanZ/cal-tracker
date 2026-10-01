@@ -2,9 +2,6 @@
 -- CAL TRACKER DATABASE SCHEMA (Supabase PostgreSQL)
 -- ==============================================================================
 
--- Enable UUID extension
-create extension if not exists "uuid-ossp";
-
 -- 1. USER PROFILES TABLE
 create table if not exists public.user_profiles (
   id uuid references auth.users on delete cascade primary key,
@@ -59,7 +56,7 @@ create table if not exists public.weight_logs (
 
 -- 5. DAILY WATER LOGS TABLE
 create table if not exists public.water_logs (
-  id uuid default uuid_generate_v4() primary key,
+  id uuid default gen_random_uuid() primary key,
   user_id uuid references auth.users on delete cascade,
   date_str text not null,
   water_ml integer not null default 0,

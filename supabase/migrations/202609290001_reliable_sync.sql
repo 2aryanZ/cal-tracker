@@ -1,5 +1,8 @@
 -- Run once in the Supabase SQL editor, after schema.sql. Re-running is safe.
 -- The original five tables are retained as a recovery copy.
+-- Older hosted projects may have macro_targets without the water target.
+alter table public.macro_targets add column if not exists water_ml integer default 2000;
+
 create table if not exists public.tracker_records (
   user_id uuid not null references auth.users(id) on delete cascade,
   entity text not null check (entity in ('food','weight','water','goals','profile','preferences')),
@@ -85,6 +88,7 @@ begin
   return next_version;
 end $$;
 revoke all on function public.apply_tracker_change(text,text,jsonb,boolean,bigint,text) from public;
+revoke all on function public.apply_tracker_change(text,text,jsonb,boolean,bigint,text) from anon;
 grant execute on function public.apply_tracker_change(text,text,jsonb,boolean,bigint,text) to authenticated;
 
 insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types) values('meal-photos','meal-photos',false,10485760,array['image/jpeg','image/png','image/webp']) on conflict(id) do nothing;
@@ -111,4 +115,5 @@ begin
   return used;
 end $$;
 revoke all on function public.reserve_nutrition_request() from public;
+revoke all on function public.reserve_nutrition_request() from anon;
 grant execute on function public.reserve_nutrition_request() to authenticated;

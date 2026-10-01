@@ -6,6 +6,8 @@ A calorie, meal, water and weight journal built with Expo SDK 57, React Native 0
 
 Use Node 24, then `npm ci`. Copy `.env.example` to `.env` and set the Supabase URL and publishable key. Run `npm start` or `npm run web`.
 
+To test Google sign-in on a phone, install a development build with Cal Tracker's `caltracker` URL scheme. The Android `development` profile creates an installable APK; the iPhone `development-device` profile creates an internal build for registered devices and requires an Apple Developer team. Run `npx eas build --profile development --platform android` or register the iPhone with `npx eas device:create` and run `npx eas build --profile development-device --platform ios`. Install the resulting app from its EAS build page, then use `npx expo start --dev-client --lan` on the same Wi-Fi. Expo Go supports email/password but cannot complete the app-specific OAuth redirect.
+
 ```sh
 npm test
 npm run typecheck
@@ -14,14 +16,14 @@ npx expo export --platform web
 deno check supabase/functions/nutrition-analysis/index.ts
 ```
 
-The 56 regression tests use isolated storage and mocked networks; they do not modify a hosted database. CI runs application checks and Deno type checking on pushes and pull requests. Narrowly scoped dependency overrides patch compatible EAS build-tool dependencies and Xcode UUID generation; recheck them when upgrading the SDK or EAS CLI.
+The 63 regression tests use isolated storage and mocked networks; they do not modify a hosted database. CI runs application checks and Deno type checking on pushes and pull requests. Narrowly scoped dependency overrides patch compatible EAS build-tool dependencies and Xcode UUID generation; recheck them when upgrading the SDK or EAS CLI.
 
 ## Database setup
 
 1. For a new project, run `supabase/schema.sql` in the Supabase SQL editor.
 2. Run `supabase/migrations/202609290001_reliable_sync.sql`. It preserves the five original tables, backfills versioned records, adds owner-protected photo storage, validates writes, and uses versions and tombstones for syncing. SQL and policies are rerunnable.
 3. Deploy `supabase/functions/nutrition-analysis/index.ts` as the `nutrition-analysis` Edge Function with JWT verification enabled. Set `GEMINI_API_KEY` and `GEMINI_MODEL` in function secrets. Choose a model your Google project actually supports. Never add a Gemini key to the mobile environment.
-4. In Supabase Auth, enable the OAuth providers you intend to support and add the production web URL and `caltracker://**` to allowed redirect URLs. Native OAuth needs a development or production build with the registered scheme.
+4. In Supabase Auth, enable the OAuth providers you intend to support and allow the exact native redirect `caltracker:///` (already configured on the current project). Add the production web URL when it exists. Native OAuth needs a development or production build with the registered scheme.
 5. Test sign-in, confirmation emails, RLS isolation, conflict resolution, photo uploads and syncing with two real test accounts and two devices before release.
 
 ### Sign-in troubleshooting
@@ -48,4 +50,4 @@ If a Gemini key was previously included in an app bundle, revoke that key in Goo
 - Community groups and health integrations are unavailable in this build; simulated members, rankings and health-sync success are not shown.
 - The app uses the Everyday food journal design: warm paper, olive accents, serif headings and four tabs (Today, History, Progress, Profile). Recent meals and favorites lead the add-food flow; estimates are labeled for review. Weight history uses a virtualized list. Store submission requires real Apple/Google account configuration; placeholder submission credentials have been removed.
 
-The migration and Edge Function must be deployed to the hosted project before cloud sync and analysis can be verified end to end.
+The database migration is deployed to the configured Supabase project. The Edge Function still needs deployment and its server-side Gemini secret before food analysis can be verified end to end.
