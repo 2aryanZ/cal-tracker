@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Share,
   Platform,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -26,6 +27,7 @@ import type { LucideIcon } from 'lucide-react-native';
 import { useNutrition } from '@/context/NutritionContext';
 import { AuthModal } from '@/components/AuthModal';
 import { ScreenHeader, TempoSheet, tempo } from '@/components/Tempo';
+import { MetricValue } from '@/components/MetricValue';
 import type {
   MacroTargets,
   NotificationSettings,
@@ -113,6 +115,8 @@ function SettingRow({
   );
 }
 export function SettingsScreen({ embedded = false }: { embedded?: boolean }) {
+  const { fontScale, width } = useWindowDimensions();
+  const stackPlan = fontScale > 1.3 || width < 350;
   const router = useRouter();
   const {
     goals,
@@ -313,20 +317,36 @@ export function SettingsScreen({ embedded = false }: { embedded?: boolean }) {
               <ChevronRight size={16} color={C.lime} />
             </TouchableOpacity>
           </View>
-          <View style={styles.planNumbers}>
+          <View
+            style={[
+              styles.planNumbers,
+              stackPlan && { flexDirection: 'column' },
+            ]}
+          >
             <View style={{ flex: 1 }}>
-              <Text style={styles.planValue}>
-                {goals.calories.toLocaleString()}{' '}
-                <Text style={tempo.darkCaption}>kcal</Text>
-              </Text>
+              <MetricValue
+                value={goals.calories.toLocaleString()}
+                unit="kcal"
+                valueStyle={styles.planValue}
+                unitStyle={tempo.darkCaption}
+                style={{ marginBottom: 8 }}
+              />
               <Text style={tempo.darkCaption}>Daily calorie target</Text>
             </View>
-            <View style={styles.planDivider} />
+            <View
+              style={[
+                styles.planDivider,
+                stackPlan && { width: '100%', height: 1 },
+              ]}
+            />
             <View style={{ flex: 1 }}>
-              <Text style={styles.planValue}>
-                {targetWeight}{' '}
-                <Text style={tempo.darkCaption}>{imperial ? 'lbs' : 'kg'}</Text>
-              </Text>
+              <MetricValue
+                value={targetWeight}
+                unit={imperial ? 'lbs' : 'kg'}
+                valueStyle={styles.planValue}
+                unitStyle={tempo.darkCaption}
+                style={{ marginBottom: 8 }}
+              />
               <Text style={tempo.darkCaption}>Weight goal</Text>
             </View>
           </View>
@@ -752,9 +772,9 @@ const styles = StyleSheet.create({
   planValue: {
     fontFamily: FONTS.bold,
     fontSize: 28,
+    lineHeight: 38,
     color: C.surface,
     letterSpacing: -1,
-    marginBottom: 8,
   },
   planDivider: { width: 1, backgroundColor: C.darkTrack },
   kicker: {

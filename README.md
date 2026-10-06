@@ -26,6 +26,8 @@ Individual Lucide imports avoid bundling the entire icon library. Journal totals
 
 See `docs/TEMPO-IMPLEMENTATION.md` for verification results and the remaining device checks.
 
+The Android metric-clipping correction and phone confirmation are recorded in `docs/PHONE-TYPOGRAPHY-FIX.md`. Use `MetricValue` for large numbers with smaller units; keep their Text elements separate.
+
 ## Database setup
 
 1. For a new project, run `supabase/schema.sql` in the Supabase SQL editor.

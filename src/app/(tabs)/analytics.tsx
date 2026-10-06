@@ -5,6 +5,7 @@ import {
   FlatList,
   TouchableOpacity,
   StyleSheet,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Polyline, Circle, Line } from 'react-native-svg';
@@ -15,6 +16,7 @@ import Flame from 'lucide-react-native/icons/flame';
 import ChevronDown from 'lucide-react-native/icons/chevron-down';
 import ChevronUp from 'lucide-react-native/icons/chevron-up';
 import { ScreenHeader, tempo } from '@/components/Tempo';
+import { MetricValue } from '@/components/MetricValue';
 import { MilestoneBadges } from '@/components/MilestoneBadges';
 import { calculateNutritionPlan, kgToLbs } from '@/services/tdeeCalculator';
 import { weightProgress } from '@/services/nutritionRules';
@@ -27,6 +29,8 @@ import { recordedWeightsThrough } from '@/services/journalRules';
 import { getTodayDateString } from '@/services/storage';
 import { JOURNAL, FONTS } from '@/constants/theme';
 export default function AnalyticsScreen() {
+  const { fontScale, width: windowWidth } = useWindowDimensions();
+  const stackSummary = fontScale > 1.3 || windowWidth < 350;
   const {
     stats,
     goals,
@@ -138,10 +142,13 @@ export default function AnalyticsScreen() {
               : 'First steps'}
           </Text>
         </View>
-        <Text style={styles.weightNumber}>
-          {recorded.length ? format(current) : '—'}{' '}
-          <Text style={styles.darkCaption}>{unit}</Text>
-        </Text>
+        <MetricValue
+          value={recorded.length ? format(current) : '—'}
+          unit={unit}
+          valueStyle={styles.weightNumber}
+          unitStyle={styles.darkCaption}
+          style={{ marginTop: 20, marginBottom: 4 }}
+        />
         <Text style={styles.darkCaption}>
           {range ? `${range} day view` : 'All records'} · {format(start)} →{' '}
           {format(userProfile.targetWeightKg)} {unit} start / goal
@@ -240,13 +247,21 @@ export default function AnalyticsScreen() {
           elapsed time.
         </Text>
       </View>
-      <View style={styles.nutritionCards}>
+      <View
+        style={[
+          styles.nutritionCards,
+          stackSummary && { flexDirection: 'column' },
+        ]}
+      >
         <View style={[styles.card, { flex: 1 }]}>
           <Text style={styles.caption}>Recorded average</Text>
-          <Text style={styles.statNumber}>
-            {summary.averageCalories.toLocaleString()}{' '}
-            <Text style={styles.caption}>kcal</Text>
-          </Text>
+          <MetricValue
+            value={summary.averageCalories.toLocaleString()}
+            unit="kcal"
+            valueStyle={styles.statNumber}
+            unitStyle={styles.caption}
+            style={{ marginVertical: 8 }}
+          />
           <Text style={styles.caption}>
             {summary.loggedDays} / {dates.length} days logged. Unlogged days
             count as zero records.
@@ -254,10 +269,13 @@ export default function AnalyticsScreen() {
         </View>
         <View style={[styles.card, { flex: 1 }]}>
           <Text style={styles.caption}>Within target</Text>
-          <Text style={styles.statNumber}>
-            {summary.adherence}
-            <Text style={styles.caption}>% of days</Text>
-          </Text>
+          <MetricValue
+            value={summary.adherence}
+            unit="% of days"
+            valueStyle={styles.statNumber}
+            unitStyle={styles.caption}
+            style={{ marginVertical: 8 }}
+          />
           <Text style={styles.caption}>
             Days within 90–110% of your calorie target.
           </Text>
@@ -441,10 +459,9 @@ const styles = StyleSheet.create({
   weightNumber: {
     fontFamily: FONTS.bold,
     fontSize: 52,
+    lineHeight: 70,
     letterSpacing: -2,
     color: JOURNAL.surface,
-    marginTop: 20,
-    marginBottom: 4,
   },
   chart: { marginTop: 24, marginBottom: 8 },
   nutritionCards: { flexDirection: 'row', gap: 10 },
@@ -452,8 +469,8 @@ const styles = StyleSheet.create({
   statNumber: {
     fontFamily: FONTS.bold,
     fontSize: 26,
+    lineHeight: 36,
     color: JOURNAL.ink,
-    marginVertical: 8,
     letterSpacing: -1,
   },
   streak: {

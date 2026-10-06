@@ -18,6 +18,7 @@ import { useNutrition } from '@/context/NutritionContext';
 import { MealResultModal } from '@/components/MealResultModal';
 import { MealCard } from '@/components/MealCard';
 import { ScreenHeader, TempoSheet, tempo } from '@/components/Tempo';
+import { MetricValue } from '@/components/MetricValue';
 import type { FoodEntry, MealType } from '@/types/nutrition';
 import { getTodayDateString } from '@/services/storage';
 import { assertDate } from '@/services/nutritionRules';
@@ -197,11 +198,13 @@ export default function HistoryScreen() {
         </View>
         <View style={tempo.card}>
           <View style={tempo.between}>
-            <View>
-              <Text style={styles.average}>
-                {summary.averageCalories.toLocaleString()}{' '}
-                <Text style={tempo.caption}>kcal</Text>
-              </Text>
+            <View style={{ flex: 1 }}>
+              <MetricValue
+                value={summary.averageCalories.toLocaleString()}
+                unit="kcal"
+                valueStyle={styles.average}
+                unitStyle={tempo.caption}
+              />
               <Text style={tempo.caption}>7-day recorded average</Text>
             </View>
             <Text style={styles.tag}>{summary.loggedDays} / 7 logged</Text>
@@ -263,10 +266,12 @@ export default function HistoryScreen() {
             <Text style={tempo.text}>Add</Text>
           </TouchableOpacity>
         </View>
-        <Text style={styles.total}>
-          {Math.round(dailySummary.totalCalories).toLocaleString()}{' '}
-          <Text style={tempo.caption}>kcal recorded</Text>
-        </Text>
+        <MetricValue
+          value={Math.round(dailySummary.totalCalories).toLocaleString()}
+          unit="kcal recorded"
+          valueStyle={styles.total}
+          unitStyle={tempo.caption}
+        />
         <Text style={[tempo.caption, { marginBottom: 12 }]}>
           {dailySummary.entries.length}{' '}
           {dailySummary.entries.length === 1 ? 'entry' : 'entries'} · P{' '}
@@ -451,6 +456,7 @@ const styles = StyleSheet.create({
   average: {
     fontFamily: FONTS.bold,
     fontSize: 28,
+    lineHeight: 38,
     color: C.ink,
     letterSpacing: -1,
   },
@@ -477,6 +483,7 @@ const styles = StyleSheet.create({
   total: {
     fontFamily: FONTS.bold,
     fontSize: 28,
+    lineHeight: 38,
     color: C.ink,
     letterSpacing: -1,
   },
