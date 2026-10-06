@@ -39,3 +39,18 @@ test('description estimates and meal ideas do not count as camera scans', () => 
   for (const source of ['photo', 'barcode', 'label'])
     assert.equal(rules.isScannedMeal({ source }), true);
 });
+
+test('bounded recent selection matches a full stable sort across duplicates and timestamp ties', () => {
+  const entries = Array.from({ length: 10000 }, (_, i) => ({
+    id: String(i), name: `Meal ${i % 711}`, timestamp: `2026-10-${String((i * 7) % 28 + 1).padStart(2, '0')}T08:00:00Z`,
+  }));
+  const newest = new Map();
+  for (const entry of entries) {
+    const previous = newest.get(entry.name);
+    if (!previous || entry.timestamp > previous.timestamp) newest.set(entry.name, entry);
+  }
+  const sorted = [...newest.values()].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  for (const limit of [0, 1, 8, 40, 1000]) {
+    assert.equal(rules.recentJournalMeals(entries, limit).map(e => e.id).join(','), sorted.slice(0, limit).map(e => e.id).join(','));
+  }
+});

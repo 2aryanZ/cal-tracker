@@ -6,6 +6,8 @@ A calorie, meal, water and weight journal built with Expo SDK 57, React Native 0
 
 Use Node 24, then `npm ci`. Copy `.env.example` to `.env` and set the Supabase URL and publishable key. Run `npm start` or `npm run web`.
 
+To create the signed, directly installable Android release APK, update `expo.version` and `expo.android.versionCode` in `app.json`, then run `npx eas-cli@23.1.0 build --profile production-apk --platform android`. This production profile inherits the production signing/build environment while keeping the app version code supplied by `app.json`. The APK is for direct installation; Google Play submissions require an AAB.
+
 To test Google sign-in on a phone, install a development build with Cal Tracker's `caltracker` URL scheme. The Android `development` profile creates an installable APK; the iPhone `development-device` profile creates an internal build for registered devices and requires an Apple Developer team. Run `npx eas-cli@23.1.0 build --profile development --platform android` or register the iPhone with `npx eas-cli@23.1.0 device:create` and run `npx eas-cli@23.1.0 build --profile development-device --platform ios`. Install the resulting app from its EAS build page, then use `npx expo start --dev-client --lan` on the same Wi-Fi. Expo Go supports email/password but cannot complete the app-specific OAuth redirect.
 
 ```sh
@@ -54,10 +56,10 @@ If a Gemini key was previously included in an app bundle, revoke that key in Goo
 - Barcode lookup supports five local product examples and Open Food Facts. Unknown products or incomplete nutrition return no result. All nutrient values use one serving basis.
 - The manual search contains 13 example meals with approximate nutrition, not a comprehensive food database. Ingredient notes do not automatically compute macro totals.
 - Meal ideas are logged individually after eating. There is no automatic full-plan consumption.
-- Weight and calorie statistics use recorded history. Days without meal logs count as zero in period averages.
+- Weight statistics use recorded history. Calorie averages and target percentages use logged days; missing days are shown separately as not logged.
 - Reminders schedule the next seven days when the app is opened or settings/logs change. Already logged meals are skipped for today. Permission denial is reported.
 - JSON backup downloads on web and shares JSON text on native. Clearing records is an explicit UI action; signed-in deletes stay queued until cloud acknowledgement.
 - Community groups and health integrations are unavailable in this build; simulated members, rankings and health-sync success are not shown.
-- The app uses the Everyday food journal design: warm paper, olive accents, serif headings and four tabs (Today, History, Progress, Profile). Recent meals and favorites lead the add-food flow; estimates are labeled for review. Weight history uses a virtualized list. Store submission requires real Apple/Google account configuration; placeholder submission credentials have been removed.
+- The app uses the Tempo food journal design: off-white surfaces, deep ink cards, lime accents, Manrope type and four tabs (Today, History, Progress, Profile). Recent meals and favorites lead the add-food flow; estimates are labeled for review. First-time onboarding starts with blank personal measurements and asks users to review an estimated plan. Store submission requires real Apple/Google account configuration; placeholder submission credentials have been removed.
 
 The database migration is deployed to the configured Supabase project. The Edge Function still needs deployment and its server-side Gemini secret before food analysis can be verified end to end.

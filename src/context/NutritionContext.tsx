@@ -21,6 +21,7 @@ import {
   recordedWeightsThrough,
   indexJournal,
 } from '@/services/journalRules';
+import type { IndexedDay } from '@/services/journalRules';
 import type {
   FoodEntry,
   MacroTargets,
@@ -103,7 +104,9 @@ interface NutritionContextType {
   isSyncing: boolean;
   rewardState: RewardState;
   toastNotification: ToastNotification | null;
+  journalDays: Readonly<Record<string, IndexedDay>>;
   onboardingVisible: boolean;
+  hasCompletedOnboarding: boolean;
   setOnboardingVisible: (visible: boolean) => void;
   logMeal: (
     meal: Omit<FoodEntry, 'id' | 'timestamp' | 'date'> & {
@@ -781,7 +784,9 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
     isSyncing,
     rewardState,
     toastNotification,
+    journalDays: journal.days,
     onboardingVisible,
+    hasCompletedOnboarding: snapshot?.onboardingDone ?? false,
     setOnboardingVisible,
     logMeal,
     editMeal,

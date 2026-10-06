@@ -22,7 +22,7 @@ import { calculateNutritionPlan, kgToLbs } from '@/services/tdeeCalculator';
 import { weightProgress } from '@/services/nutritionRules';
 import {
   analyticsDates,
-  summarizePeriod,
+  summarizeJournalPeriod,
   weightChart,
 } from '@/services/analyticsRules';
 import { recordedWeightsThrough } from '@/services/journalRules';
@@ -38,6 +38,7 @@ export default function AnalyticsScreen() {
     weightLogs,
     milestoneBadges,
     entries,
+    journalDays,
     addWeight,
     deleteWeight,
     showToast,
@@ -73,8 +74,8 @@ export default function AnalyticsScreen() {
     [entries, weightLogs, today, range],
   );
   const summary = useMemo(
-    () => summarizePeriod(entries, dates, goals),
-    [entries, dates, goals],
+    () => summarizeJournalPeriod(journalDays, dates, goals.calories),
+    [journalDays, dates, goals.calories],
   );
   const recorded = useMemo(
     () => recordedWeightsThrough(weightLogs, today),
@@ -254,30 +255,31 @@ export default function AnalyticsScreen() {
         ]}
       >
         <View style={[styles.card, { flex: 1 }]}>
-          <Text style={styles.caption}>Recorded average</Text>
+          <Text style={styles.caption}>Average on logged days</Text>
           <MetricValue
-            value={summary.averageCalories.toLocaleString()}
+            value={summary.averageCalories?.toLocaleString() ?? '—'}
             unit="kcal"
             valueStyle={styles.statNumber}
             unitStyle={styles.caption}
             style={{ marginVertical: 8 }}
           />
           <Text style={styles.caption}>
-            {summary.loggedDays} / {dates.length} days logged. Unlogged days
-            count as zero records.
+            {summary.loggedDays} / {dates.length} days logged.
+            {summary.loggedDays ? ' Unlogged days are excluded.' : ' Log a meal to see your average.'}
           </Text>
         </View>
         <View style={[styles.card, { flex: 1 }]}>
           <Text style={styles.caption}>Within target</Text>
           <MetricValue
-            value={summary.adherence}
-            unit="% of days"
+            value={summary.adherence ?? '—'}
+            unit="% of logged days"
             valueStyle={styles.statNumber}
             unitStyle={styles.caption}
             style={{ marginVertical: 8 }}
           />
           <Text style={styles.caption}>
-            Days within 90–110% of your calorie target.
+            {summary.goalDays} / {summary.loggedDays} logged days within 90–110% of your calorie target.
+            {summary.loggedDays === 0 ? ' No meals logged in this period.' : ' Based on recorded meals only.'}
           </Text>
         </View>
       </View>

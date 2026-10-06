@@ -1,6 +1,8 @@
 import type { FoodEntry, MacroTargets, WeightEntry } from '@/types/nutrition';
 import { isCalorieGoalMet } from './nutritionRules';
 import { shiftDay } from './calendarRules';
+import { indexJournal } from './journalRules';
+import type { IndexedDay } from './journalRules';
 export function trailingDates(end: string, count: number): string[] {
   return Array.from({ length: count }, (_, i) => shiftDay(end, i - count + 1));
 }
@@ -32,36 +34,35 @@ export function summarizePeriod(
   dates: string[],
   goals: MacroTargets,
 ) {
-  const totals = Object.fromEntries(
-    dates.map((date) => [
-      date,
-      { calories: 0, protein: 0, carbs: 0, fats: 0, count: 0 },
-    ]),
-  );
-  for (const entry of entries) {
-    const day = totals[entry.date];
-    if (day) {
-      day.calories += entry.calories;
-      day.protein += entry.protein;
-      day.carbs += entry.carbs;
-      day.fats += entry.fats;
-      day.count++;
+  return summarizeJournalPeriod(indexJournal(entries).days, dates, goals.calories);
+}
+// Reuse the provider's date index: changing the range scans dates, not every meal.
+export function summarizeJournalPeriod(
+  days: Readonly<Record<string, IndexedDay>>,
+  dates: string[],
+  calorieTarget: number,
+) {
+  const totals: Record<string, { calories: number; protein: number; carbs: number; fats: number; count: number }> = Object.create(null);
+  let sum = 0, loggedDays = 0, goalDays = 0;
+  for (const date of dates) {
+    if (totals[date]) continue;
+    const day = days[date];
+    const count = day?.entries.length ?? 0;
+    totals[date] = {
+      calories: day?.calories ?? 0, protein: day?.protein ?? 0,
+      carbs: day?.carbs ?? 0, fats: day?.fats ?? 0, count,
+    };
+    if (count) {
+      sum += day.calories;
+      loggedDays++;
+      if (isCalorieGoalMet(day.calories, calorieTarget)) goalDays++;
     }
-  }
-  let sum = 0,
-    loggedDays = 0,
-    goalDays = 0;
-  for (const day of Object.values(totals)) {
-    sum += day.calories;
-    if (day.count) loggedDays++;
-    if (isCalorieGoalMet(day.calories, goals.calories)) goalDays++;
   }
   return {
     totals,
-    averageCalories: dates.length ? Math.round(sum / dates.length) : 0,
-    loggedDays,
-    goalDays,
-    adherence: dates.length ? Math.round((goalDays / dates.length) * 100) : 0,
+    averageCalories: loggedDays ? Math.round(sum / loggedDays) : null,
+    loggedDays, goalDays,
+    adherence: loggedDays ? Math.round((goalDays / loggedDays) * 100) : null,
   };
 }
 // Keep endpoints and each bucket's extrema. Full records remain in the weigh-in list.

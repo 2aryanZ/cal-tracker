@@ -37,6 +37,7 @@ function RootNavigationLayout() {
     toastNotification,
     dismissToast,
     onboardingVisible,
+    hasCompletedOnboarding,
     setOnboardingVisible,
     userProfile,
     saveProfile,
@@ -81,6 +82,7 @@ function RootNavigationLayout() {
           visible={onboardingVisible}
           onClose={() => setOnboardingVisible(false)}
           initialProfile={userProfile}
+          firstSetup={!hasCompletedOnboarding}
           onComplete={saveProfile}
         />
       </View>

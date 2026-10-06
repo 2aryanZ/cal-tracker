@@ -1,7 +1,7 @@
 {
   "name": "cal-tracker",
   "main": "expo-router/entry",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
     "@supabase/supabase-js": "^2.112.4",
@@ -54,7 +54,8 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "test": "node --test tests/*.test.cjs",
-    "typecheck": "tsc --noEmit --incremental false"
+    "typecheck": "tsc --noEmit --incremental false",
+    "benchmark:journal": "node scripts/benchmark-journal.cjs"
   },
   "private": true,
   "overrides": {

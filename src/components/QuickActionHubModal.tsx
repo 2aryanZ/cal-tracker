@@ -69,7 +69,7 @@ const methods = [
     Icon: Scale,
   },
 ] as const;
-export function QuickActionHubModal({
+function Content({
   visible,
   onClose,
   onSelectAction,
@@ -77,41 +77,116 @@ export function QuickActionHubModal({
 }: Props) {
   const { recentMeals, favoriteMeals, selectedDate } = useNutrition();
   const [query, setQuery] = useState('');
-  const [visibleCount, setVisibleCount] = useState(40);
+  const [filter, setFilter] = useState<'recent' | 'favorites' | 'all'>(recentMeals.length ? 'recent' : favoriteMeals.length ? 'favorites' : 'recent');
+  const [visibleCount, setVisibleCount] = useState(6);
+  const [moreMethods, setMoreMethods] = useState(false);
   const choices = useMemo(
-    () => savedMealChoices(favoriteMeals, recentMeals),
-    [favoriteMeals, recentMeals],
+    () => savedMealChoices(filter === 'recent' ? [] : favoriteMeals, filter === 'favorites' ? [] : recentMeals),
+    [favoriteMeals, recentMeals, filter],
   );
-  const matches = useMemo(
-    () =>
-      choices.filter((m) =>
-        m.name.toLowerCase().includes(query.trim().toLowerCase()),
-      ),
-    [choices, query],
+  const searchIndex = useMemo(
+    () => choices.map((meal) => ({ meal, name: meal.name.trim().toLowerCase() })),
+    [choices],
   );
+  const favoriteIds = useMemo(
+    () => new Set(favoriteMeals.map((meal) => meal.id)),
+    [favoriteMeals],
+  );
+  const matches = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    return term
+      ? searchIndex.filter(({ name }) => name.includes(term)).map(({ meal }) => meal)
+      : choices;
+  }, [searchIndex, choices, query]);
+  const close = () => {
+    setQuery('');
+    setVisibleCount(6);
+    setMoreMethods(false);
+    onClose();
+  };
   return (
     <TempoSheet
       visible={visible}
       title="Log a meal"
-      onClose={() => {
-        setQuery('');
-        setVisibleCount(40);
-        onClose();
-      }}
+      onClose={close}
     >
       <Text style={styles.caption}>
         Logging for {selectedDate}. Choose a familiar meal or add something new.
       </Text>
+      <Text accessibilityRole="header" style={styles.section}>Recent meals & favorites</Text>
+      <View style={styles.filters}>
+        {(['recent', 'favorites', 'all'] as const).map((value) => (
+          <TouchableOpacity key={value} accessibilityRole="button"
+            accessibilityState={{ selected: filter === value }}
+            style={[styles.filter, filter === value && styles.activeFilter]}
+            onPress={() => { setFilter(value); setVisibleCount(6); }}>
+            <Text style={styles.name}>{value === 'recent' ? 'Recent' : value === 'favorites' ? 'Favorites' : 'All'}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <View style={styles.search}>
+        <Search size={18} color={JOURNAL.muted} />
+        <TextInput
+          accessibilityLabel={`Search ${filter === 'all' ? 'recent meals and favorites' : filter + ' meals'}`}
+          placeholder="Search your meals"
+          placeholderTextColor={JOURNAL.muted}
+          value={query}
+          onChangeText={(value) => {
+            setQuery(value);
+            setVisibleCount(6);
+          }}
+          style={styles.input}
+        />
+      </View>
+      {onSelectMeal && matches.length ? (
+        matches.slice(0, visibleCount).map((meal) => (
+          <TouchableOpacity
+            key={meal.id}
+            accessibilityRole="button"
+            style={styles.meal}
+            onPress={() => {
+              close();
+              onSelectMeal(meal);
+            }}
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={styles.name}>{meal.name}</Text>
+              <Text style={styles.caption}>
+                {favoriteIds.has(meal.id) ? 'Favorite' : 'Recent'} · {meal.portionSize || '1 serving'}
+              </Text>
+              <Text style={styles.caption}>
+                Review before saving
+              </Text>
+            </View>
+            <Text style={styles.name}>{meal.calories} kcal</Text>
+          </TouchableOpacity>
+        ))
+      ) : (
+        <Text style={styles.caption}>
+          {query
+            ? 'No matching saved meals.'
+            : filter === 'favorites' ? 'Save a favorite from a meal’s review to find it here.' : 'Your logged meals will appear here. Add your first meal below.'}
+        </Text>
+      )}
+      {matches.length > visibleCount && (
+        <TouchableOpacity
+          accessibilityRole="button"
+          style={styles.method}
+          onPress={() => setVisibleCount((count) => count + 20)}
+        >
+          <Text style={styles.name}>
+            Show more saved meals ({matches.length - visibleCount})
+          </Text>
+        </TouchableOpacity>
+      )}
       <Text style={styles.section}>Something new</Text>
-      {methods.map(({ id, label, detail, Icon }) => (
+      {(moreMethods ? methods : methods.slice(0, 2)).map(({ id, label, detail, Icon }) => (
         <TouchableOpacity
           accessibilityRole="button"
           key={id}
           style={styles.method}
           onPress={() => {
-            onClose();
-            setQuery('');
-            setVisibleCount(40);
+            close();
             onSelectAction(id);
           }}
         >
@@ -124,65 +199,25 @@ export function QuickActionHubModal({
           </View>
         </TouchableOpacity>
       ))}
-      <View style={styles.search}>
-        <Search size={18} color={JOURNAL.muted} />
-        <TextInput
-          accessibilityLabel="Search recent meals and favorites"
-          placeholder="Search your meals"
-          placeholderTextColor={JOURNAL.muted}
-          value={query}
-          onChangeText={(value) => {
-            setQuery(value);
-            setVisibleCount(40);
-          }}
-          style={styles.input}
-        />
-      </View>
-      <Text style={styles.section}>Recent meals & favorites</Text>
-      {onSelectMeal && matches.length ? (
-        matches.slice(0, visibleCount).map((meal) => (
-          <TouchableOpacity
-            key={meal.id}
-            accessibilityRole="button"
-            style={styles.meal}
-            onPress={() => {
-              onClose();
-              setQuery('');
-              setVisibleCount(40);
-              onSelectMeal(meal);
-            }}
-          >
-            <View style={{ flex: 1 }}>
-              <Text style={styles.name}>{meal.name}</Text>
-              <Text style={styles.caption}>
-                {meal.portionSize || '1 serving'} · Review before saving
-              </Text>
-            </View>
-            <Text style={styles.name}>{meal.calories} kcal</Text>
-          </TouchableOpacity>
-        ))
-      ) : (
-        <Text style={styles.caption}>
-          {query
-            ? 'No matching saved meals.'
-            : 'Your logged meals and favorites will appear here.'}
-        </Text>
-      )}
-      {matches.length > visibleCount && (
-        <TouchableOpacity
-          accessibilityRole="button"
-          style={styles.method}
-          onPress={() => setVisibleCount((count) => count + 40)}
-        >
-          <Text style={styles.name}>
-            Show more saved meals ({matches.length - visibleCount})
-          </Text>
-        </TouchableOpacity>
-      )}
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityState={{ expanded: moreMethods }}
+        style={styles.method}
+        onPress={() => setMoreMethods((value) => !value)}
+      >
+        <Text style={styles.name}>{moreMethods ? 'Fewer options' : 'More ways to log'}</Text>
+      </TouchableOpacity>
     </TempoSheet>
   );
 }
+export function QuickActionHubModal(props: Props) {
+  // Mount only while open: no saved-meal filtering on unrelated journal updates.
+  return props.visible ? <Content {...props} /> : null;
+}
 const styles = StyleSheet.create({
+  filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+  filter: { minHeight: 48, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: JOURNAL.line, backgroundColor: JOURNAL.surface, justifyContent: 'center' },
+  activeFilter: { backgroundColor: JOURNAL.soft, borderColor: JOURNAL.accent },
   caption: {
     fontFamily: FONTS.sans,
     fontSize: 14,
@@ -206,7 +241,7 @@ const styles = StyleSheet.create({
     borderColor: JOURNAL.line,
     borderRadius: 12,
     paddingHorizontal: 12,
-    marginTop: 20,
+    marginBottom: 8,
   },
   input: {
     fontFamily: FONTS.sans,

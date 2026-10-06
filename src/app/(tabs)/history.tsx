@@ -22,7 +22,7 @@ import { MetricValue } from '@/components/MetricValue';
 import type { FoodEntry, MealType } from '@/types/nutrition';
 import { getTodayDateString } from '@/services/storage';
 import { assertDate } from '@/services/nutritionRules';
-import { trailingDates, summarizePeriod } from '@/services/analyticsRules';
+import { trailingDates, summarizeJournalPeriod } from '@/services/analyticsRules';
 import {
   localDay,
   shiftDay,
@@ -33,7 +33,7 @@ import { JOURNAL as C, FONTS } from '@/constants/theme';
 const slots: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack'];
 export default function HistoryScreen() {
   const {
-    entries,
+    journalDays,
     selectedDate,
     setSelectedDate,
     goals,
@@ -61,12 +61,12 @@ export default function HistoryScreen() {
     }, [selectedDate, weekEnd]),
   );
   const summary = useMemo(
-    () => summarizePeriod(entries, week, goals),
-    [entries, week, goals],
+    () => summarizeJournalPeriod(journalDays, week, goals.calories),
+    [journalDays, week, goals.calories],
   );
   const loggedDays = useMemo(
-    () => new Set(entries.map((e) => e.date)),
-    [entries],
+    () => new Set(Object.keys(journalDays)),
+    [journalDays],
   );
   const cells = useMemo(() => monthDays(month), [month]);
   const peak = Math.max(
@@ -200,12 +200,12 @@ export default function HistoryScreen() {
           <View style={tempo.between}>
             <View style={{ flex: 1 }}>
               <MetricValue
-                value={summary.averageCalories.toLocaleString()}
+                value={summary.averageCalories?.toLocaleString() ?? '—'}
                 unit="kcal"
                 valueStyle={styles.average}
                 unitStyle={tempo.caption}
               />
-              <Text style={tempo.caption}>7-day recorded average</Text>
+              <Text style={tempo.caption}>Average on logged days</Text>
             </View>
             <Text style={styles.tag}>{summary.loggedDays} / 7 logged</Text>
           </View>
@@ -215,14 +215,16 @@ export default function HistoryScreen() {
             accessibilityLabel={week
               .map(
                 (d) =>
-                  `${d}: ${Math.round(summary.totals[d].calories)} kilocalories recorded`,
+                  summary.totals[d].count
+                    ? `${d}: ${Math.round(summary.totals[d].calories)} kilocalories recorded`
+                    : `${d}: Not logged`,
               )
               .join('. ')}
           >
             {week.map((date) => (
               <View key={date} style={styles.barColumn}>
                 <View style={styles.barTrack}>
-                  <View
+                  {summary.totals[date].count > 0 && <View
                     style={[
                       styles.bar,
                       {
@@ -234,7 +236,7 @@ export default function HistoryScreen() {
                           date === selectedDate ? C.accent : C.soft,
                       },
                     ]}
-                  />
+                  />}
                 </View>
                 <Text style={styles.weekday}>
                   {localDay(date).toLocaleDateString(undefined, {
@@ -245,8 +247,7 @@ export default function HistoryScreen() {
             ))}
           </View>
           <Text style={styles.fine}>
-            Includes {7 - summary.loggedDays} unlogged{' '}
-            {7 - summary.loggedDays === 1 ? 'day' : 'days'} as zero records.
+            {summary.loggedDays ? 'Based on recorded meals only. Unlogged days are excluded.' : 'No meals logged this week. Add a meal to see your average.'}
           </Text>
         </View>
         <View style={[tempo.between, { marginBottom: 12 }]}>

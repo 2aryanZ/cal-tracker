@@ -2,7 +2,7 @@
   "expo": {
     "name": "Cal Tracker",
     "slug": "cal-tracker",
-    "version": "1.1.4",
+    "version": "1.1.5",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "caltracker",
@@ -19,7 +19,7 @@
     },
     "android": {
       "package": "com.caltracker.app",
-      "versionCode": 8,
+      "versionCode": 9,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundColor": "#152B30"

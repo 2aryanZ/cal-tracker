@@ -1,400 +1,208 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  Modal,
-  ScrollView,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
-  ActivityIndicator,
+  View, Text, Modal, ScrollView, TextInput, TouchableOpacity,
+  StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import {
-  calculateNutritionPlan,
-  cmToFtIn,
-  ftInToCm,
-  kgToLbs,
-  lbsToKg,
-} from '@/services/tdeeCalculator';
-import type {
-  UserProfile,
-  FitnessGoal,
-  ActivityLevel,
-} from '@/services/tdeeCalculator';
+import { calculateNutritionPlan } from '@/services/tdeeCalculator';
+import type { UserProfile } from '@/services/tdeeCalculator';
 import type { MacroTargets } from '@/types/nutrition';
-import { validateProfile } from '@/services/nutritionRules';
-import { PALETTE, FONTS, JOURNAL } from '@/constants/theme';
+import {
+  profileDraft, convertDraftUnits, draftErrors, reviewedProfile,
+} from '@/services/onboardingRules';
+import type { ProfileDraft, DraftErrors } from '@/services/onboardingRules';
+import { FONTS, JOURNAL as C } from '@/constants/theme';
 interface Props {
   visible: boolean;
   onClose: () => void;
   initialProfile: UserProfile;
-  onComplete: (
-    profile: UserProfile,
-    targets: MacroTargets,
-  ) => void | Promise<void>;
+  firstSetup: boolean;
+  onComplete: (profile: UserProfile, targets: MacroTargets) => void | Promise<void>;
 }
-function Content({
-  initialProfile,
-  onComplete,
-  onClose,
-}: Omit<Props, 'visible'>) {
-  const [unit, setUnit] = useState(initialProfile.unitSystem),
-    [gender, setGender] = useState(initialProfile.gender),
-    [goal, setGoal] = useState(initialProfile.goal),
-    [activity, setActivity] = useState(initialProfile.activityLevel);
-  const [age, setAge] = useState(String(initialProfile.age)),
-    [steps, setSteps] = useState(String(initialProfile.dailySteps)),
-    [weight, setWeight] = useState(
-      String(
-        initialProfile.unitSystem === 'metric'
-          ? initialProfile.weightKg
-          : kgToLbs(initialProfile.weightKg),
-      ),
-    ),
-    [target, setTarget] = useState(
-      String(
-        initialProfile.unitSystem === 'metric'
-          ? initialProfile.targetWeightKg
-          : kgToLbs(initialProfile.targetWeightKg),
-      ),
-    ),
-    [height, setHeight] = useState(String(initialProfile.heightCm)),
-    [feet, setFeet] = useState(String(cmToFtIn(initialProfile.heightCm).feet)),
-    [inches, setInches] = useState(
-      String(cmToFtIn(initialProfile.heightCm).inches),
-    );
-  const [review, setReview] = useState<{
-      profile: UserProfile;
-      targets: MacroTargets;
-    } | null>(null),
-    [error, setError] = useState(''),
-    [busy, setBusy] = useState(false);
-  const switchUnits = (next: 'metric' | 'imperial') => {
-    if (next === unit) return;
-    setReview(null);
-    if (next === 'imperial') {
-      setWeight(String(kgToLbs(Number(weight))));
-      setTarget(String(kgToLbs(Number(target))));
-      const h = cmToFtIn(Number(height));
-      setFeet(String(h.feet));
-      setInches(String(h.inches));
-    } else {
-      setWeight(String(lbsToKg(Number(weight))));
-      setTarget(String(lbsToKg(Number(target))));
-      setHeight(String(ftInToCm(Number(feet), Number(inches))));
-    }
-    setUnit(next);
-  };
-  const calculate = () => {
+const goals = [
+  ['fat_loss', 'Lose weight'], ['muscle_gain', 'Gain weight'],
+  ['maintenance', 'Maintain weight'], ['recomposition', 'Body recomposition'],
+] as const;
+const activities = [
+  ['sedentary', 'Mostly sitting'], ['light', 'Lightly active'],
+  ['moderate', 'Moderately active'], ['very_active', 'Very active'],
+] as const;
+function Content({ initialProfile, firstSetup, onComplete, onClose }: Omit<Props, 'visible'>) {
+  const [draft, setDraft] = useState(() => profileDraft(initialProfile, firstSetup));
+  const [step, setStep] = useState<0 | 1 | 2>(0);
+  const [errors, setErrors] = useState<DraftErrors>({});
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const saving = useRef(false);
+  const scroll = useRef<ScrollView>(null);
+  const [review, setReview] = useState<{ profile: UserProfile; targets: MacroTargets } | null>(null);
+  const change = <K extends keyof ProfileDraft>(key: K, value: ProfileDraft[K]) => {
+    setDraft((previous) => ({ ...previous, [key]: value }));
+    setErrors((previous) => ({ ...previous, [key]: undefined }));
     setError('');
-    try {
-      if (
-        [
-          age,
-          weight,
-          target,
-          steps,
-          ...(unit === 'metric' ? [height] : [feet, inches]),
-        ].some((v) => !v.trim())
-      )
-        throw new Error('Fill in each profile field.');
-      if (unit === 'imperial' && (Number(inches) < 0 || Number(inches) >= 12))
-        throw new Error('Inches must be between 0 and 11.');
-      const profile: UserProfile = {
-        age: Number(age),
-        gender,
-        goal,
-        activityLevel: activity,
-        unitSystem: unit,
-        dailySteps: Number(steps),
-        heightCm:
-          unit === 'metric'
-            ? Number(height)
-            : ftInToCm(Number(feet), Number(inches)),
-        weightKg: unit === 'metric' ? Number(weight) : lbsToKg(Number(weight)),
-        targetWeightKg:
-          unit === 'metric' ? Number(target) : lbsToKg(Number(target)),
-      };
-      validateProfile(profile);
-      if (goal === 'fat_loss' && profile.targetWeightKg > profile.weightKg)
-        throw new Error(
-          'Choose a weight loss target below your current weight.',
-        );
-      if (goal === 'muscle_gain' && profile.targetWeightKg < profile.weightKg)
-        throw new Error(
-          'Choose a weight gain target above your current weight.',
-        );
-      setReview({ profile, targets: calculateNutritionPlan(profile).macros });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Check your profile.');
+    setReview(null);
+  };
+  const move = (next: 0 | 1 | 2) => {
+    setStep(next);
+    setErrors({});
+    setError('');
+    scroll.current?.scrollTo({ y: 0, animated: false });
+  };
+  const next = () => {
+    if (step === 2) return;
+    const invalid = draftErrors(draft, step);
+    setErrors(invalid);
+    if (Object.keys(invalid).length) {
+      setError('Check the highlighted fields below.');
+      scroll.current?.scrollTo({ y: 0, animated: false });
+      return;
+    }
+    if (step === 0) move(1);
+    else {
+      try {
+        const profile = reviewedProfile(draft);
+        setReview({ profile, targets: calculateNutritionPlan(profile).macros });
+        move(2);
+      } catch (e) { setError(e instanceof Error ? e.message : 'Check your details.'); }
     }
   };
   const save = async () => {
-    if (!review || busy) return;
+    if (!review || saving.current) return;
+    saving.current = true;
     setBusy(true);
     setError('');
     try {
       await onComplete(review.profile, review.targets);
       onClose();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unable to save your profile.');
-    } finally {
-      setBusy(false);
-    }
+    } catch (e) { setError(e instanceof Error ? e.message : 'Unable to save. Please try again.'); }
+    finally { saving.current = false; setBusy(false); }
   };
-  const field = (label: string, value: string, change: (v: string) => void) => (
+  const inlineError = (key: keyof ProfileDraft) => errors[key]
+    ? <Text accessibilityRole="alert" style={styles.error}>{errors[key]}</Text> : null;
+  const field = (key: keyof ProfileDraft, label: string, example: string, integer = false) => (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
       <TextInput
         accessibilityLabel={label}
-        value={value}
-        onChangeText={(v) => {
-          change(v);
-          setReview(null);
+        accessibilityHint={errors[key] || `Example: ${example}`}
+        value={draft[key]}
+        placeholder={`e.g. ${example}`}
+        placeholderTextColor={C.muted}
+        onChangeText={(value) => change(key, value)}
+        onBlur={() => {
+          if (step < 2) setErrors((previous) => ({ ...previous, [key]: draftErrors(draft, step as 0 | 1)[key] }));
         }}
-        keyboardType="decimal-pad"
-        style={styles.input}
+        keyboardType={integer ? 'number-pad' : 'decimal-pad'}
+        style={[styles.input, errors[key] && styles.invalid]}
       />
+      {inlineError(key)}
     </View>
   );
+  const options = <K extends 'gender' | 'goal' | 'activity'>(key: K, label: string, choices: readonly (readonly [ProfileDraft[K], string])[]) => (
+    <View style={styles.field}>
+      <Text style={styles.label}>{label}</Text>
+      <View style={styles.row}>
+        {choices.map(([value, title]) => (
+          <TouchableOpacity key={value} accessibilityRole="button"
+            accessibilityState={{ selected: draft[key] === value }}
+            style={[styles.button, draft[key] === value && styles.active]}
+            onPress={() => change(key, value)}>
+            <Text style={styles.text}>{title}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      {inlineError(key)}
+    </View>
+  );
+  const weightUnit = draft.unit === 'metric' ? 'kg' : 'lbs';
   return (
-    <SafeAreaView style={styles.page}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView
-          contentContainerStyle={styles.body}
-          keyboardShouldPersistTaps="handled"
-        >
+    <Modal animationType="none" onRequestClose={() => { if (!saving.current) onClose(); }}>
+    <SafeAreaView style={styles.page} accessibilityViewIsModal>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView ref={scroll} contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
           <View style={styles.header}>
-            <Text style={styles.title}>Your profile</Text>
-            <TouchableOpacity
-              accessibilityRole="button"
-              onPress={onClose}
-              style={styles.button}
-            >
-              <Text style={styles.text}>Close</Text>
+            <Text accessibilityRole="header" style={styles.title}>{firstSetup ? 'Your own pace' : 'Your profile'}</Text>
+            <TouchableOpacity accessibilityRole="button" disabled={busy} onPress={onClose} style={styles.button}>
+              <Text style={styles.text}>{firstSetup ? 'Not now' : 'Close'}</Text>
             </TouchableOpacity>
           </View>
-          <Text style={styles.note}>
-            Set your own targets, then review the estimated calorie and macro
-            plan.
-          </Text>
-          {error ? (
-            <Text accessibilityRole="alert" style={styles.error}>
-              {error}
-            </Text>
-          ) : null}
-          <View style={styles.row}>
-            {(['metric', 'imperial'] as const).map((u) => (
-              <TouchableOpacity
-                key={u}
-                accessibilityRole="button"
-                accessibilityState={{ selected: unit === u }}
-                onPress={() => switchUnits(u)}
-                style={[styles.button, unit === u && styles.active]}
-              >
-                <Text style={styles.text}>{u}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          {field('Age', age, setAge)}
-          <View style={styles.row}>
-            {(['male', 'female'] as const).map((g) => (
-              <TouchableOpacity
-                key={g}
-                accessibilityRole="button"
-                accessibilityState={{ selected: gender === g }}
-                onPress={() => {
-                  setGender(g);
-                  setReview(null);
-                }}
-                style={[styles.button, gender === g && styles.active]}
-              >
-                <Text style={styles.text}>{g}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          {unit === 'metric' ? (
-            field('Height (cm)', height, setHeight)
-          ) : (
-            <>
-              {field('Height (feet)', feet, setFeet)}
-              {field('Height (inches)', inches, setInches)}
-            </>
-          )}
-          {field(
-            `Current weight (${unit === 'metric' ? 'kg' : 'lbs'})`,
-            weight,
-            setWeight,
-          )}
-          {field(
-            `Target weight (${unit === 'metric' ? 'kg' : 'lbs'})`,
-            target,
-            setTarget,
-          )}
-          {field('Daily steps', steps, setSteps)}
-          <Text style={styles.label}>Goal</Text>
-          <View style={styles.row}>
-            {(
-              [
-                'fat_loss',
-                'muscle_gain',
-                'maintenance',
-                'recomposition',
-              ] as FitnessGoal[]
-            ).map((g) => (
-              <TouchableOpacity
-                key={g}
-                accessibilityRole="button"
-                accessibilityState={{ selected: goal === g }}
-                style={[styles.button, goal === g && styles.active]}
-                onPress={() => {
-                  setGoal(g);
-                  setReview(null);
-                }}
-              >
-                <Text style={styles.text}>{g.replaceAll('_', ' ')}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <Text style={styles.label}>Activity</Text>
-          <View style={styles.row}>
-            {(
-              [
-                'sedentary',
-                'light',
-                'moderate',
-                'very_active',
-              ] as ActivityLevel[]
-            ).map((a) => (
-              <TouchableOpacity
-                key={a}
-                accessibilityRole="button"
-                accessibilityState={{ selected: activity === a }}
-                style={[styles.button, activity === a && styles.active]}
-                onPress={() => {
-                  setActivity(a);
-                  setReview(null);
-                }}
-              >
-                <Text style={styles.text}>{a.replaceAll('_', ' ')}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          {review ? (
-            <View style={styles.card}>
-              <Text style={styles.title}>
-                {review.targets.calories} kcal/day
-              </Text>
-              <Text style={styles.note}>
-                Protein {review.targets.protein}g · Carbs {review.targets.carbs}
-                g · Fat {review.targets.fats}g
-              </Text>
-              <Text style={styles.note}>
-                Water target {review.targets.waterMl} ml — adjustable in
-                Settings.
-              </Text>
-              <TouchableOpacity
-                accessibilityRole="button"
-                disabled={busy}
-                style={styles.primary}
-                onPress={save}
-              >
-                {busy ? (
-                  <ActivityIndicator color={JOURNAL.ink} />
-                ) : (
-                  <Text style={styles.primaryText}>Save reviewed plan</Text>
-                )}
-              </TouchableOpacity>
+          <Text accessibilityLiveRegion="polite" style={styles.note}>Step {step + 1} of 3 · {['Body details', 'Goals & activity', 'Review your plan'][step]}</Text>
+          <Text style={styles.note}>{firstSetup
+            ? 'Use your own details to estimate a starting plan. You can also start your journal now and set manual targets in Profile.'
+            : 'Review your details and the estimated plan before saving.'}</Text>
+          {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+          {step === 0 && <>
+            <Text style={styles.label}>Measurement units</Text>
+            <View style={styles.row}>
+              {(['metric', 'imperial'] as const).map((unit) => (
+                <TouchableOpacity key={unit} accessibilityRole="button" accessibilityState={{ selected: draft.unit === unit }}
+                  style={[styles.button, draft.unit === unit && styles.active]}
+                  onPress={() => { setDraft((value) => convertDraftUnits(value, unit)); setErrors({}); setReview(null); }}>
+                  <Text style={styles.text}>{unit === 'metric' ? 'Metric · kg / cm' : 'Imperial · lbs / ft'}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
-          ) : (
-            <TouchableOpacity
-              accessibilityRole="button"
-              style={styles.primary}
-              onPress={calculate}
-            >
-              <Text style={styles.primaryText}>Review calculated targets</Text>
+            {field('age', 'Age (years)', '26', true)}
+            {options('gender', 'Sex used for the calorie estimate', [['male', 'Male'], ['female', 'Female']])}
+            {draft.unit === 'metric' ? field('height', 'Height (cm)', '175') : <>
+              {field('feet', 'Height (feet)', '5', true)}
+              {field('inches', 'Height (inches)', '0')}
+            </>}
+            {field('weight', `Current weight (${weightUnit})`, draft.unit === 'metric' ? '70' : '154')}
+          </>}
+          {step === 1 && <>
+            {options('goal', 'Your goal', goals)}
+            {field('target', `Target weight (${weightUnit})`, draft.unit === 'metric' ? '68' : '150')}
+            {options('activity', 'Usual activity level', activities)}
+            <Text style={styles.note}>Choose the level that describes your typical day, including exercise.</Text>
+            {field('steps', 'Typical daily steps', '5000', true)}
+          </>}
+          {step === 2 && review && <View style={styles.card}>
+            <Text accessibilityRole="header" style={styles.label}>Your reviewed details</Text>
+            <Text style={styles.note}>{draft.age} years · {draft.gender} · {draft.unit === 'metric' ? `${draft.height} cm` : `${draft.feet} ft ${draft.inches} in`}</Text>
+            <Text style={styles.note}>{draft.weight} → {draft.target} {weightUnit} · {goals.find(([id]) => id === draft.goal)?.[1]}</Text>
+            <Text style={styles.note}>{activities.find(([id]) => id === draft.activity)?.[1]} · {draft.steps} steps/day</Text>
+            <Text style={styles.plan}>{review.targets.calories.toLocaleString()} kcal/day</Text>
+            <Text style={styles.note}>Protein {review.targets.protein} g · Carbs {review.targets.carbs} g · Fat {review.targets.fats} g</Text>
+            <Text style={styles.note}>Water {review.targets.waterMl} ml/day</Text>
+            <Text style={styles.note}>These are starting estimates. You can adjust targets in Profile.</Text>
+          </View>}
+          <View style={styles.row}>
+            {step > 0 && <TouchableOpacity accessibilityRole="button" disabled={busy} style={styles.button} onPress={() => move(step === 2 ? 1 : 0)}>
+              <Text style={styles.text}>Back</Text>
+            </TouchableOpacity>}
+            <TouchableOpacity accessibilityRole="button" accessibilityState={{ disabled: busy, busy }} disabled={busy}
+              style={[styles.primary, busy && { opacity: 0.6 }]} onPress={step === 2 ? save : next}>
+              {busy ? <ActivityIndicator color={C.ink} /> : <Text style={styles.primaryText}>{step === 2 ? 'Save reviewed plan' : step === 1 ? 'Review my plan' : 'Continue'}</Text>}
             </TouchableOpacity>
-          )}
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
+    </Modal>
   );
 }
 export function OnboardingModal(props: Props) {
   if (!props.visible) return null;
-  return (
-    <Modal animationType="none" onRequestClose={props.onClose}>
-      <Content {...props} />
-    </Modal>
-  );
+  return <Content {...props} />;
 }
 const styles = StyleSheet.create({
-  text: { fontFamily: FONTS.sans, fontSize: 14, color: JOURNAL.ink },
-  page: { flex: 1, backgroundColor: PALETTE[50] },
-  body: { padding: 24, paddingBottom: 48 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  title: { fontFamily: FONTS.serif, fontSize: 28, color: PALETTE[950] },
-  note: {
-    fontFamily: FONTS.sans,
-    fontSize: 14,
-    lineHeight: 22,
-    color: PALETTE[600],
-    marginVertical: 12,
-  },
-  field: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginVertical: 8,
-  },
-  label: { fontFamily: FONTS.sans, fontSize: 16, color: PALETTE[950] },
-  input: {
-    fontFamily: FONTS.sans,
-    minHeight: 48,
-    width: 112,
-    fontSize: 16,
-    padding: 12,
-    backgroundColor: 'white',
-    borderRadius: 12,
-  },
-  row: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginVertical: 12 },
-  button: {
-    minHeight: 44,
-    padding: 12,
-    justifyContent: 'center',
-    backgroundColor: 'white',
-    borderRadius: 12,
-  },
-  active: { backgroundColor: PALETTE[200] },
-  primary: {
-    minHeight: 48,
-    backgroundColor: JOURNAL.lime,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginVertical: 16,
-  },
-  primaryText: { fontFamily: FONTS.bold, fontSize: 16, color: JOURNAL.ink },
-  card: {
-    backgroundColor: 'white',
-    padding: 20,
-    borderRadius: 18,
-    marginVertical: 16,
-  },
-  error: {
-    fontFamily: FONTS.sans,
-    fontSize: 14,
-    color: JOURNAL.error,
-    lineHeight: 21,
-  },
+  page: { flex: 1, backgroundColor: C.paper },
+  body: { padding: 24, paddingBottom: 48, width: '100%', maxWidth: 560, alignSelf: 'center' },
+  header: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  title: { fontFamily: FONTS.bold, fontSize: 28, color: C.ink, flexShrink: 1 },
+  note: { fontFamily: FONTS.sans, fontSize: 14, lineHeight: 22, color: C.muted, marginVertical: 8 },
+  field: { marginVertical: 12, gap: 8 },
+  label: { fontFamily: FONTS.semibold, fontSize: 16, lineHeight: 24, color: C.ink },
+  input: { fontFamily: FONTS.sans, minHeight: 48, fontSize: 16, padding: 12, color: C.ink, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, borderRadius: 12 },
+  invalid: { borderColor: C.error },
+  row: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginVertical: 8 },
+  button: { minHeight: 48, padding: 12, justifyContent: 'center', backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, borderRadius: 12 },
+  active: { backgroundColor: C.soft, borderColor: C.accent },
+  text: { fontFamily: FONTS.sans, fontSize: 14, color: C.ink },
+  primary: { minHeight: 48, flexGrow: 1, padding: 14, backgroundColor: C.lime, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  primaryText: { fontFamily: FONTS.bold, fontSize: 16, color: C.ink },
+  card: { backgroundColor: C.surface, padding: 20, borderRadius: 18, marginVertical: 16 },
+  plan: { fontFamily: FONTS.bold, fontSize: 28, lineHeight: 38, color: C.ink, marginTop: 16 },
+  error: { fontFamily: FONTS.sans, fontSize: 14, color: C.error, lineHeight: 22 },
 });

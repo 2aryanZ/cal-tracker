@@ -34,9 +34,11 @@ export function savedMealChoices(
   recent: FoodEntry[],
 ): (FavoriteMeal | FoodEntry)[] {
   const choices = new Map<string, FavoriteMeal | FoodEntry>();
-  for (const meal of [...favorites, ...recent]) {
-    const name = meal.name.trim().toLowerCase();
-    if (!choices.has(name)) choices.set(name, meal);
+  for (const group of [favorites, recent]) {
+    for (const meal of group) {
+      const name = meal.name.trim().toLowerCase();
+      if (!choices.has(name)) choices.set(name, meal);
+    }
   }
   return [...choices.values()];
 }
@@ -45,6 +47,8 @@ export function recentJournalMeals(
   entries: FoodEntry[],
   limit = 8,
 ): FoodEntry[] {
+  const count = Math.max(0, Math.floor(limit));
+  if (!count) return [];
   const newest = new Map<string, FoodEntry>();
   for (const entry of entries) {
     const key = entry.name.trim().toLowerCase();
@@ -52,9 +56,14 @@ export function recentJournalMeals(
     if (!previous || entry.timestamp > previous.timestamp)
       newest.set(key, entry);
   }
-  return [...newest.values()]
-    .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
-    .slice(0, Math.max(0, limit));
+  const selected: FoodEntry[] = [];
+  for (const entry of newest.values()) {
+    const position = selected.findIndex((meal) => entry.timestamp > meal.timestamp);
+    if (position !== -1) selected.splice(position, 0, entry);
+    else if (selected.length < count) selected.push(entry);
+    if (selected.length > count) selected.pop();
+  }
+  return selected;
 }
 export function recordedWeightsThrough(
   logs: WeightEntry[],
