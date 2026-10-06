@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, Modal, TouchableOpacity } from 'react-native';
-import { CircleCheck } from 'lucide-react-native';
+import CircleCheck from 'lucide-react-native/icons/circle-check';
 import { JOURNAL, FONTS } from '@/constants/theme';
 import { triggerGoalCelebrationHaptic } from '@/services/hapticsService';
 interface Props {
@@ -67,7 +67,7 @@ const styles = StyleSheet.create({
     color: JOURNAL.ink,
     textAlign: 'center',
   },
-  text: {
+  text: { fontFamily: FONTS.sans,
     fontSize: 15,
     lineHeight: 23,
     color: JOURNAL.muted,
@@ -81,5 +81,5 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginTop: 8,
   },
-  buttonText: { fontSize: 15, color: JOURNAL.surface },
+  buttonText: { fontFamily: FONTS.sans,  fontSize: 15, color: JOURNAL.surface },
 });

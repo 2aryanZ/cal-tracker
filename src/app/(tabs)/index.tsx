@@ -8,9 +8,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { Utensils, Plus, Droplet } from 'lucide-react-native';
+import Camera from 'lucide-react-native/icons/camera';
+import Plus from 'lucide-react-native/icons/plus';
+import Droplet from 'lucide-react-native/icons/droplet';
+import ChefHat from 'lucide-react-native/icons/chef-hat';
 import { JOURNAL, FONTS } from '@/constants/theme';
 import { useNutrition } from '@/context/NutritionContext';
+import { ScreenHeader, EnergyDial, tempo } from '@/components/Tempo';
 import { MealCard } from '@/components/MealCard';
 import { MealResultModal } from '@/components/MealResultModal';
 import { QuickActionHubModal } from '@/components/QuickActionHubModal';
@@ -25,15 +29,29 @@ import type {
   FavoriteMeal,
 } from '@/types/nutrition';
 const slots: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack'];
-function Meter({ value, target }: { value: number; target: number }) {
+function Meter({
+  value,
+  target,
+  color,
+}: {
+  value: number;
+  target: number;
+  color: string;
+}) {
   const fraction = target > 0 ? Math.max(0, Math.min(1, value / target)) : 0;
   return (
     <View
       style={styles.track}
       accessibilityRole="progressbar"
-      accessibilityValue={{ min: 0, max: target, now: value }}
+      accessibilityValue={{ min: 0, max: target, now: Math.min(target, value) }}
+      accessibilityLabel={`${Math.round(value)} of ${target} grams recorded`}
     >
-      <View style={[styles.fill, { width: `${fraction * 100}%` }]} />
+      <View
+        style={[
+          styles.fill,
+          { width: `${fraction * 100}%`, backgroundColor: color },
+        ]}
+      />
     </View>
   );
 }
@@ -52,6 +70,7 @@ export default function TodayScreen() {
     logWater,
     showToast,
     userProfile,
+    userAccount,
     dietaryPreference,
     addWeight,
   } = useNutrition();
@@ -125,73 +144,83 @@ export default function TodayScreen() {
     'en-GB',
     { weekday: 'long', month: 'short', day: 'numeric' },
   );
-  const remaining = goals.calories - consumed.calories;
+
   return (
     <SafeAreaView edges={['top']} style={styles.page}>
       <ScrollView
         contentContainerStyle={styles.body}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.brandRow}>
-          <View style={styles.brandGroup}>
-            <Utensils size={22} color={JOURNAL.accent} />
-            <Text style={styles.brand}>Cal Tracker</Text>
-          </View>
-          <Text style={styles.caption}>Food journal</Text>
-        </View>
-        <Text style={styles.date}>{date}</Text>
-        <Text accessibilityRole="header" style={styles.title}>
-          Your day, on a plate.
-        </Text>
-        <View style={styles.summary}>
-          <Text style={styles.caption}>Calories logged</Text>
-          <Text style={styles.number}>
-            {Math.round(consumed.calories).toLocaleString('en-US')}{' '}
-            <Text style={styles.numberUnit}>
-              / {goals.calories.toLocaleString('en-US')} kcal
-            </Text>
-          </Text>
-          <Meter value={consumed.calories} target={goals.calories} />
-          <Text
-            style={[
-              styles.remaining,
-              remaining < 0 && { color: JOURNAL.error },
-            ]}
-          >
-            {Math.abs(Math.round(remaining)).toLocaleString('en-US')} kcal{' '}
-            {remaining < 0 ? 'above your target' : 'remaining'}
-          </Text>
-        </View>
+        <ScreenHeader
+          title="Today"
+          subtitle={date}
+          action={
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Open profile"
+              onPress={() => router.push('/(tabs)/profile')}
+              style={styles.avatar}
+            >
+              <Text style={styles.avatarText}>
+                {userAccount.isLoggedIn
+                  ? userAccount.name.charAt(0).toUpperCase() || 'Y'
+                  : 'Y'}
+              </Text>
+            </TouchableOpacity>
+          }
+        />
+        <EnergyDial
+          calories={consumed.calories}
+          target={goals.calories}
+          goalMet={dailySummary.goalMet}
+        />
         <View style={styles.macros}>
           {(
             [
-              { key: 'protein', label: 'Protein' },
-              { key: 'carbs', label: 'Carbs' },
-              { key: 'fats', label: 'Fat' },
+              { key: 'protein', label: 'Protein', color: JOURNAL.protein },
+              { key: 'carbs', label: 'Carbs', color: JOURNAL.carbs },
+              { key: 'fats', label: 'Fat', color: JOURNAL.fats },
             ] as const
-          ).map(({ key, label }) => (
+          ).map(({ key, label, color }) => (
             <View key={key} style={styles.macro}>
               <Text style={styles.caption}>{label}</Text>
-              <Text style={styles.macroValue}>
-                {Math.round(consumed[key])}
-                <Text style={styles.caption}> / {goals[key]} g</Text>
-              </Text>
-              <Meter value={consumed[key]} target={goals[key]} />
+              <Text style={styles.macroValue}>{Math.round(consumed[key])}</Text>
+              <Text style={styles.macroTarget}>/ {goals[key]} g</Text>
+              <Meter value={consumed[key]} target={goals[key]} color={color} />
             </View>
           ))}
         </View>
-        <View style={styles.sectionHeader}>
-          <Text accessibilityRole="header" style={styles.sectionTitle}>
-            Today’s meals
-          </Text>
+        <View style={styles.actionRow}>
           <TouchableOpacity
             accessibilityRole="button"
-            style={styles.addFood}
+            style={[tempo.primary, { flex: 1 }]}
             onPress={() => setHub(true)}
           >
-            <Plus size={16} color={JOURNAL.surface} />
-            <Text style={styles.addText}>Add food</Text>
+            <Plus size={18} color={JOURNAL.ink} />
+            <Text style={tempo.primaryText}>Log a meal</Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Take a food photo"
+            style={[tempo.secondary, { width: 52, paddingHorizontal: 0 }]}
+            onPress={() =>
+              router.push({
+                pathname: '/(tabs)/scan',
+                params: { mode: 'food', mealType: slot },
+              })
+            }
+          >
+            <Camera size={22} color={JOURNAL.ink} />
+          </TouchableOpacity>
+        </View>
+        <View style={styles.sectionHeader}>
+          <Text accessibilityRole="header" style={tempo.sectionTitle}>
+            Meal log
+          </Text>
+          <Text style={styles.caption}>
+            {dailySummary.entries.length}{' '}
+            {dailySummary.entries.length === 1 ? 'entry' : 'entries'}
+          </Text>
         </View>
         {slots.map((type) => (
           <MealCard
@@ -239,6 +268,14 @@ export default function TodayScreen() {
             </Text>
           </TouchableOpacity>
         </View>
+        <TouchableOpacity
+          accessibilityRole="button"
+          onPress={() => setPlan(true)}
+          style={styles.ideas}
+        >
+          <ChefHat size={18} color={JOURNAL.accent} />
+          <Text style={styles.waterText}>Meal ideas for your day</Text>
+        </TouchableOpacity>
       </ScrollView>
       <QuickActionHubModal
         visible={hub}
@@ -327,95 +364,84 @@ export default function TodayScreen() {
   );
 }
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: JOURNAL.paper },
-  body: { paddingHorizontal: 24, paddingTop: 24, paddingBottom: 32 },
-  brandRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-    paddingBottom: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: JOURNAL.line,
-  },
-  brandGroup: { flexDirection: 'row', gap: 8, alignItems: 'center' },
-  brand: { fontFamily: FONTS.serif, fontSize: 24, color: JOURNAL.ink },
-  caption: { fontSize: 12, lineHeight: 19, color: JOURNAL.muted },
-  date: { fontSize: 12, color: JOURNAL.muted, marginTop: 24, marginBottom: 12 },
-  title: {
-    fontFamily: FONTS.serif,
-    fontSize: 30,
-    color: JOURNAL.ink,
-    marginBottom: 24,
-  },
-  summary: {
-    backgroundColor: JOURNAL.surface,
-    borderRadius: 18,
-    padding: 20,
-    marginBottom: 24,
-  },
-  number: {
-    fontSize: 36,
-    color: JOURNAL.ink,
-    fontVariant: ['tabular-nums'],
-    marginTop: 8,
-    marginBottom: 16,
-  },
-  numberUnit: { fontSize: 14, color: JOURNAL.muted },
-  track: {
-    height: 6,
-    backgroundColor: JOURNAL.soft,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  fill: { height: '100%', backgroundColor: JOURNAL.accent },
-  remaining: { fontSize: 14, color: JOURNAL.accentText, marginTop: 12 },
-  macros: { flexDirection: 'row', gap: 12, marginBottom: 28 },
-  macro: { flex: 1 },
-  macroValue: {
-    fontSize: 20,
-    color: JOURNAL.ink,
-    marginTop: 8,
-    marginBottom: 12,
-    fontVariant: ['tabular-nums'],
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
-  },
-  sectionTitle: { fontFamily: FONTS.serif, fontSize: 22, color: JOURNAL.ink },
-  addFood: {
-    minHeight: 48,
-    backgroundColor: JOURNAL.accent,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  addText: { fontSize: 14, color: JOURNAL.surface, fontWeight: '600' },
-  water: {
-    borderTopWidth: 1,
-    borderTopColor: JOURNAL.line,
-    paddingTop: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  waterLabel: { flexDirection: 'row', gap: 12, alignItems: 'center', flex: 1 },
-  waterTitle: { fontSize: 16, color: JOURNAL.ink },
-  waterButton: {
-    minHeight: 48,
-    paddingHorizontal: 16,
+  page: tempo.page,
+  body: tempo.body,
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: JOURNAL.lime,
     justifyContent: 'center',
-    borderRadius: 12,
+    alignItems: 'center',
+  },
+  avatarText: { fontFamily: FONTS.bold, fontSize: 20, color: JOURNAL.ink },
+  caption: tempo.caption,
+  macros: { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  macro: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 16,
     backgroundColor: JOURNAL.surface,
     borderWidth: 1,
     borderColor: JOURNAL.line,
   },
-  waterText: { fontSize: 14, color: JOURNAL.water, fontWeight: '600' },
+  macroValue: {
+    fontFamily: FONTS.bold,
+    fontSize: 23,
+    color: JOURNAL.ink,
+    marginTop: 6,
+    fontVariant: ['tabular-nums'],
+  },
+  macroTarget: {
+    fontFamily: FONTS.sans,
+    fontSize: 10,
+    color: JOURNAL.muted,
+    marginTop: 2,
+    marginBottom: 10,
+  },
+  track: {
+    height: 4,
+    backgroundColor: JOURNAL.soft,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  fill: { height: '100%' },
+  actionRow: { flexDirection: 'row', gap: 8, marginBottom: 20 },
+  sectionHeader: { ...tempo.between, marginBottom: 8 },
+  water: {
+    padding: 16,
+    borderRadius: 18,
+    backgroundColor: JOURNAL.soft,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginTop: 16,
+  },
+  waterLabel: { flexDirection: 'row', gap: 10, alignItems: 'center', flex: 1 },
+  waterTitle: {
+    fontFamily: FONTS.semibold,
+    fontSize: 14,
+    color: JOURNAL.accent,
+  },
+  waterButton: {
+    minHeight: 48,
+    paddingHorizontal: 12,
+    justifyContent: 'center',
+    borderRadius: 12,
+    backgroundColor: JOURNAL.surface,
+  },
+  waterText: {
+    fontFamily: FONTS.semibold,
+    fontSize: 12,
+    color: JOURNAL.accent,
+  },
+  ideas: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 8,
+  },
 });

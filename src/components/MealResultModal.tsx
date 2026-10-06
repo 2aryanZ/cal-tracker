@@ -14,7 +14,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { X, Camera, Plus, Trash2, Heart } from 'lucide-react-native';
+import X from 'lucide-react-native/icons/x';
+import Camera from 'lucide-react-native/icons/camera';
+import Plus from 'lucide-react-native/icons/plus';
+import Trash2 from 'lucide-react-native/icons/trash';
+import Heart from 'lucide-react-native/icons/heart';
 import type {
   AiFoodDetectionResult,
   MealType,
@@ -508,9 +512,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  caption: { fontSize: 14, lineHeight: 22, color: JOURNAL.muted },
-  label: { fontSize: 14, color: JOURNAL.muted, marginBottom: 8, marginTop: 20 },
-  input: {
+  caption: { fontFamily: FONTS.sans,  fontSize: 14, lineHeight: 22, color: JOURNAL.muted },
+  label: { fontFamily: FONTS.sans,  fontSize: 14, color: JOURNAL.muted, marginBottom: 8, marginTop: 20 },
+  input: { fontFamily: FONTS.sans,
     minHeight: 48,
     borderWidth: 1,
     borderColor: JOURNAL.line,
@@ -520,7 +524,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: JOURNAL.ink,
   },
-  text: { fontSize: 16, color: JOURNAL.ink, lineHeight: 24 },
+  text: { fontFamily: FONTS.sans,  fontSize: 16, color: JOURNAL.ink, lineHeight: 24 },
   slots: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   slot: {
     padding: 12,
@@ -532,7 +536,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   selected: { backgroundColor: JOURNAL.soft, borderColor: JOURNAL.accent },
-  slotText: { fontSize: 14, color: JOURNAL.ink },
+  slotText: { fontFamily: FONTS.sans,  fontSize: 14, color: JOURNAL.ink },
   nutrition: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
   field: { width: '47%' },
   photoButton: {
@@ -572,15 +576,15 @@ const styles = StyleSheet.create({
   },
   primary: {
     minHeight: 52,
-    backgroundColor: JOURNAL.accent,
+    backgroundColor: JOURNAL.lime,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 24,
   },
-  primaryText: { fontSize: 16, fontWeight: '600', color: JOURNAL.surface },
+  primaryText: { fontFamily: FONTS.sans,  fontSize: 16, fontWeight: '600', color: JOURNAL.ink },
   disabled: { opacity: 0.6 },
-  error: { color: JOURNAL.error, fontSize: 14, lineHeight: 22, marginTop: 12 },
+  error: { fontFamily: FONTS.sans,  color: JOURNAL.error, fontSize: 14, lineHeight: 22, marginTop: 12 },
   deletion: { marginTop: 24 },
   examples: { marginBottom: 8 },
   example: {

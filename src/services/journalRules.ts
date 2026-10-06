@@ -1,4 +1,45 @@
-import type { FoodEntry, WeightEntry } from '@/types/nutrition';
+import type { FavoriteMeal, FoodEntry, WeightEntry } from '@/types/nutrition';
+
+export interface IndexedDay {
+  entries: FoodEntry[];
+  calories: number;
+  protein: number;
+  carbs: number;
+  fats: number;
+}
+// Build once per record change; day navigation and badges reuse the same totals.
+export function indexJournal(entries: FoodEntry[]) {
+  const days: Record<string, IndexedDay> = Object.create(null);
+  let scans = 0;
+  for (const entry of entries) {
+    const day = (days[entry.date] ??= {
+      entries: [],
+      calories: 0,
+      protein: 0,
+      carbs: 0,
+      fats: 0,
+    });
+    day.entries.push(entry);
+    day.calories += entry.calories;
+    day.protein += entry.protein;
+    day.carbs += entry.carbs;
+    day.fats += entry.fats;
+    if (isScannedMeal(entry)) scans++;
+  }
+  return { days, scans };
+}
+
+export function savedMealChoices(
+  favorites: FavoriteMeal[],
+  recent: FoodEntry[],
+): (FavoriteMeal | FoodEntry)[] {
+  const choices = new Map<string, FavoriteMeal | FoodEntry>();
+  for (const meal of [...favorites, ...recent]) {
+    const name = meal.name.trim().toLowerCase();
+    if (!choices.has(name)) choices.set(name, meal);
+  }
+  return [...choices.values()];
+}
 // Choose the newest instance of each meal name without mutating stored records.
 export function recentJournalMeals(
   entries: FoodEntry[],

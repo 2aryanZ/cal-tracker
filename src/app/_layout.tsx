@@ -1,6 +1,8 @@
-import React,{useEffect} from 'react';
-import {SafeAreaProvider} from 'react-native-safe-area-context';
-import {subscribeToReminderTaps} from '@/services/notificationService';
+import React, { useEffect } from 'react';
+import { useFonts } from 'expo-font';
+import * as SplashScreen from 'expo-splash-screen';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { subscribeToReminderTaps } from '@/services/notificationService';
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View, StyleSheet, Platform } from 'react-native';
@@ -10,9 +12,25 @@ import { NotificationToast } from '@/components/NotificationToast';
 import { OnboardingModal } from '@/components/OnboardingModal';
 import { PALETTE, JOURNAL } from '@/constants/theme';
 
+void SplashScreen.preventAutoHideAsync().catch(() => {});
+
 function RootNavigationLayout() {
-  const router=useRouter();
-  useEffect(()=>subscribeToReminderTaps(data=>{if(data.screen==='scan')router.push({pathname:'/(tabs)/scan',params:{mode:'food',mealType:String(data.mealType??'lunch')}});else router.push('/(tabs)');}),[router]);
+  const router = useRouter();
+  useEffect(
+    () =>
+      subscribeToReminderTaps((data) => {
+        if (data.screen === 'scan')
+          router.push({
+            pathname: '/(tabs)/scan',
+            params: {
+              mode: 'food',
+              mealType: String(data.mealType ?? 'lunch'),
+            },
+          });
+        else router.push('/(tabs)');
+      }),
+    [router],
+  );
   const {
     rewardState,
     dismissReward,
@@ -33,7 +51,8 @@ function RootNavigationLayout() {
             headerShown: false,
             contentStyle: { backgroundColor: PALETTE[50] },
             animation: 'none',
-          }}>
+          }}
+        >
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen
             name="settings"
@@ -70,10 +89,21 @@ function RootNavigationLayout() {
 }
 
 export default function RootLayout() {
+  const [fontsLoaded, fontError] = useFonts({
+    'Manrope-Regular': require('../../assets/fonts/Manrope-Regular.ttf'),
+    'Manrope-SemiBold': require('../../assets/fonts/Manrope-SemiBold.ttf'),
+    'Manrope-ExtraBold': require('../../assets/fonts/Manrope-ExtraBold.ttf'),
+  });
+  useEffect(() => {
+    if (fontsLoaded || fontError) void SplashScreen.hideAsync().catch(() => {});
+  }, [fontsLoaded, fontError]);
+  if (!fontsLoaded && !fontError) return null;
   return (
-    <SafeAreaProvider><NutritionProvider>
-      <RootNavigationLayout />
-    </NutritionProvider></SafeAreaProvider>
+    <SafeAreaProvider>
+      <NutritionProvider>
+        <RootNavigationLayout />
+      </NutritionProvider>
+    </SafeAreaProvider>
   );
 }
 
@@ -87,7 +117,7 @@ const styles = StyleSheet.create({
   mobileContainer: {
     flex: 1,
     width: '100%',
-    maxWidth: Platform.OS === 'web' ? 460 : '100%',
+    maxWidth: Platform.OS === 'web' ? 460 : 560,
     backgroundColor: PALETTE[50],
     shadowColor: PALETTE[950],
     shadowOffset: { width: 0, height: 4 },

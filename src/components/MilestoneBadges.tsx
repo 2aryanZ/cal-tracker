@@ -1,17 +1,15 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Modal } from 'react-native';
-import {
-  Trophy,
-  Flame,
-  Target,
-  Droplet,
-  Camera,
-  Scale,
-  Award,
-  CheckCircle2,
-  Lock,
-  X,
-} from 'lucide-react-native';
+import Trophy from 'lucide-react-native/icons/trophy';
+import Flame from 'lucide-react-native/icons/flame';
+import Target from 'lucide-react-native/icons/target';
+import Droplet from 'lucide-react-native/icons/droplet';
+import Camera from 'lucide-react-native/icons/camera';
+import Scale from 'lucide-react-native/icons/scale';
+import Award from 'lucide-react-native/icons/award';
+import CheckCircle2 from 'lucide-react-native/icons/circle-check';
+import Lock from 'lucide-react-native/icons/lock';
+import X from 'lucide-react-native/icons/x';
 import { MilestoneBadge } from '@/types/nutrition';
 import { PALETTE, FONTS, JOURNAL } from '@/constants/theme';
 import { triggerLightImpact } from '@/services/hapticsService';

@@ -1,9 +1,10 @@
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Info, X } from 'lucide-react-native';
+import Info from 'lucide-react-native/icons/info';
+import X from 'lucide-react-native/icons/x';
 import type { ToastNotification } from '@/types/nutrition';
-import { JOURNAL } from '@/constants/theme';
+import { JOURNAL, FONTS } from '@/constants/theme';
 export function NotificationToast({
   toast,
   onDismiss,
@@ -67,13 +68,13 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
   },
-  title: {
+  title: { fontFamily: FONTS.sans,
     fontSize: 15,
     fontWeight: '600',
     color: JOURNAL.ink,
     lineHeight: 22,
   },
-  message: { fontSize: 13, lineHeight: 20, color: JOURNAL.muted },
+  message: { fontFamily: FONTS.sans,  fontSize: 13, lineHeight: 20, color: JOURNAL.muted },
   close: {
     width: 48,
     minHeight: 48,

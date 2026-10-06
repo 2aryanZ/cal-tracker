@@ -6,7 +6,7 @@ A calorie, meal, water and weight journal built with Expo SDK 57, React Native 0
 
 Use Node 24, then `npm ci`. Copy `.env.example` to `.env` and set the Supabase URL and publishable key. Run `npm start` or `npm run web`.
 
-To test Google sign-in on a phone, install a development build with Cal Tracker's `caltracker` URL scheme. The Android `development` profile creates an installable APK; the iPhone `development-device` profile creates an internal build for registered devices and requires an Apple Developer team. Run `npx eas build --profile development --platform android` or register the iPhone with `npx eas device:create` and run `npx eas build --profile development-device --platform ios`. Install the resulting app from its EAS build page, then use `npx expo start --dev-client --lan` on the same Wi-Fi. Expo Go supports email/password but cannot complete the app-specific OAuth redirect.
+To test Google sign-in on a phone, install a development build with Cal Tracker's `caltracker` URL scheme. The Android `development` profile creates an installable APK; the iPhone `development-device` profile creates an internal build for registered devices and requires an Apple Developer team. Run `npx eas-cli@23.1.0 build --profile development --platform android` or register the iPhone with `npx eas-cli@23.1.0 device:create` and run `npx eas-cli@23.1.0 build --profile development-device --platform ios`. Install the resulting app from its EAS build page, then use `npx expo start --dev-client --lan` on the same Wi-Fi. Expo Go supports email/password but cannot complete the app-specific OAuth redirect.
 
 ```sh
 npm test
@@ -16,7 +16,15 @@ npx expo export --platform web
 deno check supabase/functions/nutrition-analysis/index.ts
 ```
 
-The 63 regression tests use isolated storage and mocked networks; they do not modify a hosted database. CI runs application checks and Deno type checking on pushes and pull requests. Narrowly scoped dependency overrides patch compatible EAS build-tool dependencies and Xcode UUID generation; recheck them when upgrading the SDK or EAS CLI.
+The regression tests use isolated storage and mocked networks; they do not modify a hosted database. CI runs application checks and Deno type checking on pushes and pull requests. EAS CLI is invoked through the pinned `npx eas-cli@23.1.0` command rather than installed in the app. The Xcode UUID override remains; recheck it when upgrading the SDK.
+
+## Tempo interface
+
+Today, History, Progress and Profile implement the approved Tempo direction: Manrope type, off-white surfaces, deep ink cards and lime primary actions. Shared tokens live in `src/constants/theme.ts`; headers, the calorie dial and settings sheets live in `src/components/Tempo.tsx`. The three bundled font weights include their OFL license.
+
+Individual Lucide imports avoid bundling the entire icon library. Journal totals use a date index, saved meal search renders in batches, and long weight charts retain endpoints and extrema while the complete weigh-in list stays available. No additional UI library is needed.
+
+See `docs/TEMPO-IMPLEMENTATION.md` for verification results and the remaining device checks.
 
 ## Database setup
 

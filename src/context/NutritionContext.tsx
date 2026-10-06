@@ -19,7 +19,7 @@ import { JOURNAL } from '@/constants/theme';
 import {
   recentJournalMeals,
   recordedWeightsThrough,
-  isScannedMeal,
+  indexJournal,
 } from '@/services/journalRules';
 import type {
   FoodEntry,
@@ -155,6 +155,7 @@ interface NutritionContextType {
 const NutritionContext = createContext<NutritionContextType | undefined>(
   undefined,
 );
+const EMPTY_ENTRIES: FoodEntry[] = [];
 export function NutritionProvider({ children }: { children: ReactNode }) {
   const [snapshot, setSnapshot] = useState<storage.LocalSnapshot | null>(null);
   const [userAccount, setUserAccount] = useState(storage.DEFAULT_ACCOUNT);
@@ -354,7 +355,8 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
       supabase.auth.stopAutoRefresh();
     };
   }, [activateAccount, backgroundSync, showToast]);
-  const entries = useMemo(() => snapshot?.entries ?? [], [snapshot]);
+  const entries = snapshot?.entries ?? EMPTY_ENTRIES;
+  const journal = useMemo(() => indexJournal(entries), [entries]);
   const goals = snapshot?.goals ?? storage.DEFAULT_GOALS;
   const userProfile = snapshot?.profile ?? storage.DEFAULT_PROFILE;
   const notificationSettings =
@@ -370,22 +372,18 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
   const healthSync = snapshot?.health ?? storage.DEFAULT_HEALTH_SYNC;
   const stats = useMemo(() => calculateStats(entries, today), [entries, today]);
   const active = useMemo(
-    () => entries.filter((e) => e.date === selectedDate),
-    [entries, selectedDate],
+    () => journal.days[selectedDate]?.entries ?? EMPTY_ENTRIES,
+    [journal, selectedDate],
   );
-  const consumed = useMemo(
-    () =>
-      active.reduce(
-        (total, e) => ({
-          calories: total.calories + e.calories,
-          protein: total.protein + e.protein,
-          carbs: total.carbs + e.carbs,
-          fats: total.fats + e.fats,
-        }),
-        { calories: 0, protein: 0, carbs: 0, fats: 0 },
-      ),
-    [active],
-  );
+  const consumed = useMemo(() => {
+    const day = journal.days[selectedDate];
+    return {
+      calories: day?.calories ?? 0,
+      protein: day?.protein ?? 0,
+      carbs: day?.carbs ?? 0,
+      fats: day?.fats ?? 0,
+    };
+  }, [journal, selectedDate]);
   const remaining = useMemo(
     () => ({
       calories: goals.calories - consumed.calories,
@@ -507,7 +505,7 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
   ) => {
     await persist(() => storage.saveProfileAndTargets(profile, newGoals));
     setOnboardingVisible(false);
-    showToast('Profile saved', 'Your targets have been updated.');
+    showToast('Profile saved', 'Your profile and daily plan have been saved.');
   };
   const updateNotifications: NutritionContextType['updateNotifications'] =
     async (settings) => {
@@ -621,24 +619,14 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
   const start = recordedWeights[0]?.weightKg ?? userProfile.weightKg,
     current = recordedWeights.at(-1)?.weightKg ?? userProfile.weightKg;
   const progress = weightProgress(start, current, userProfile.targetWeightKg);
-  const scans = useMemo(() => entries.filter(isScannedMeal).length, [entries]);
+  const scans = journal.scans;
   const proteinDays = useMemo(
-    () =>
-      Object.values(
-        entries.reduce<Record<string, number>>((a, e) => {
-          a[e.date] = (a[e.date] ?? 0) + e.protein;
-          return a;
-        }, {}),
-      ),
-    [entries],
+    () => Object.values(journal.days).map((day) => day.protein),
+    [journal],
   );
   const todayProtein = useMemo(
-    () =>
-      entries.reduce(
-        (total, entry) => total + (entry.date === today ? entry.protein : 0),
-        0,
-      ),
-    [entries, today],
+    () => journal.days[today]?.protein ?? 0,
+    [journal, today],
   );
   const todayWater = waterLogs[today] ?? 0;
   const waterBest = Math.max(0, ...Object.values(waterLogs));

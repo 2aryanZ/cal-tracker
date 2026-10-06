@@ -10,11 +10,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Polyline, Circle, Line } from 'react-native-svg';
 import { useNutrition } from '@/context/NutritionContext';
 import { WeightLogModal } from '@/components/WeightLogModal';
+import Plus from 'lucide-react-native/icons/plus';
+import Flame from 'lucide-react-native/icons/flame';
+import ChevronDown from 'lucide-react-native/icons/chevron-down';
+import ChevronUp from 'lucide-react-native/icons/chevron-up';
+import { ScreenHeader, tempo } from '@/components/Tempo';
 import { MilestoneBadges } from '@/components/MilestoneBadges';
 import { calculateNutritionPlan, kgToLbs } from '@/services/tdeeCalculator';
 import { weightProgress } from '@/services/nutritionRules';
 import {
-  trailingDates,
+  analyticsDates,
   summarizePeriod,
   weightChart,
 } from '@/services/analyticsRules';
@@ -33,6 +38,7 @@ export default function AnalyticsScreen() {
     deleteWeight,
     showToast,
   } = useNutrition();
+  const [energyOpen, setEnergyOpen] = useState(false);
   const [range, setRange] = useState(30),
     [unitOverride, setUnit] = useState<'kg' | 'lbs' | null>(null),
     [modal, setModal] = useState(false);
@@ -58,23 +64,10 @@ export default function AnalyticsScreen() {
         (userProfile.unitSystem === 'imperial' ? 'lbs' : 'kg')) === 'lbs',
     unit = imperial ? 'lbs' : 'kg';
   const today = getTodayDateString();
-  const dates = useMemo(() => {
-    const earliest = entries.reduce(
-      (first, e) => (e.date < first ? e.date : first),
-      today,
-    );
-    const count =
-      range ||
-      Math.max(
-        1,
-        Math.round(
-          (Date.parse(`${today}T12:00:00Z`) -
-            Date.parse(`${earliest}T12:00:00Z`)) /
-            86400000,
-        ) + 1,
-      );
-    return trailingDates(today, count);
-  }, [entries, today, range]);
+  const dates = useMemo(
+    () => analyticsDates(entries, weightLogs, today, range),
+    [entries, weightLogs, today, range],
+  );
   const summary = useMemo(
     () => summarizePeriod(entries, dates, goals),
     [entries, dates, goals],
@@ -107,19 +100,20 @@ export default function AnalyticsScreen() {
   const balance = goals.calories - plan.tdee;
   const header = (
     <>
-      <View style={styles.header}>
-        <Text accessibilityRole="header" style={styles.title}>
-          Your progress
-        </Text>
-        <TouchableOpacity
-          accessibilityRole="button"
-          style={styles.button}
-          onPress={() => setModal(true)}
-        >
-          <Text style={styles.buttonText}>Log weight</Text>
-        </TouchableOpacity>
-      </View>
-      <Text style={styles.text}>Small habits, recorded over time.</Text>
+      <ScreenHeader
+        title="Progress"
+        subtitle="Small changes. A clearer trend."
+        action={
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Log weight"
+            style={tempo.iconButton}
+            onPress={() => setModal(true)}
+          >
+            <Plus size={22} color={JOURNAL.ink} />
+          </TouchableOpacity>
+        }
+      />
       <View style={styles.filters}>
         {[30, 60, 90, 180, 365, 0].map((n) => (
           <TouchableOpacity
@@ -129,110 +123,189 @@ export default function AnalyticsScreen() {
             onPress={() => setRange(n)}
             style={[styles.pill, range === n && styles.active]}
           >
-            <Text style={styles.buttonText}>{n === 0 ? 'All' : `${n}D`}</Text>
+            <Text style={styles.buttonText}>
+              {n === 0 ? 'All' : n === 365 ? '1Y' : `${n}D`}
+            </Text>
           </TouchableOpacity>
         ))}
       </View>
-      <View style={styles.card}>
-        <View style={styles.header}>
-          <Text style={styles.subtitle}>Weight history</Text>
+      <View style={styles.weightCard}>
+        <View style={tempo.between}>
+          <Text style={styles.darkCaption}>RECORDED WEIGHT</Text>
+          <Text style={styles.change}>
+            {recorded.length > 1
+              ? `${current - start > 0 ? '↑' : current - start < 0 ? '↓' : '↔'} ${format(Math.abs(current - start))} ${unit}`
+              : 'First steps'}
+          </Text>
+        </View>
+        <Text style={styles.weightNumber}>
+          {recorded.length ? format(current) : '—'}{' '}
+          <Text style={styles.darkCaption}>{unit}</Text>
+        </Text>
+        <Text style={styles.darkCaption}>
+          {range ? `${range} day view` : 'All records'} · {format(start)} →{' '}
+          {format(userProfile.targetWeightKg)} {unit} start / goal
+        </Text>
+        <View style={styles.chart}>
+          {chart.points.length ? (
+            <>
+              <Svg
+                width="100%"
+                height={height}
+                viewBox={`0 0 ${width} ${height}`}
+                accessible
+                accessibilityLabel={`Weight history with ${logs.length} entries. Starting ${format(logs[0].weightKg)}, latest ${format(logs.at(-1)!.weightKg)} ${unit}. Goal ${format(userProfile.targetWeightKg)} ${unit}.`}
+              >
+                {[40, 80, 120].map((y) => (
+                  <Line
+                    key={y}
+                    x1={20}
+                    x2={width - 20}
+                    y1={y}
+                    y2={y}
+                    stroke={JOURNAL.darkTrack}
+                  />
+                ))}
+                <Line
+                  x1={20}
+                  x2={width - 20}
+                  y1={chart.goalY}
+                  y2={chart.goalY}
+                  stroke={JOURNAL.onDark}
+                  strokeDasharray="5 4"
+                />
+                <Polyline
+                  points={chart.points.map((p) => `${p.x},${p.y}`).join(' ')}
+                  stroke={JOURNAL.lime}
+                  strokeWidth={3}
+                  fill="none"
+                />
+                {chart.points.map((p) => (
+                  <Circle
+                    key={p.log.id}
+                    cx={p.x}
+                    cy={p.y}
+                    r={3}
+                    fill={JOURNAL.lime}
+                  />
+                ))}
+              </Svg>
+              <View style={tempo.between}>
+                <Text style={styles.darkCaption}>{logs[0].date}</Text>
+                <Text style={styles.darkCaption}>{logs.at(-1)?.date}</Text>
+              </View>
+            </>
+          ) : (
+            <Text
+              style={[
+                styles.darkCaption,
+                { textAlign: 'center', paddingVertical: 48 },
+              ]}
+            >
+              No weigh-ins in this period. Log one to begin.
+            </Text>
+          )}
+        </View>
+        <View style={tempo.between}>
+          <Text style={styles.darkCaption}>
+            Dashed goal: {format(userProfile.targetWeightKg)} {unit}
+          </Text>
           <View style={styles.units}>
             {(['kg', 'lbs'] as const).map((u) => (
               <TouchableOpacity
                 key={u}
                 accessibilityRole="button"
+                accessibilityLabel={`Show weight in ${u}`}
                 accessibilityState={{ selected: unit === u }}
-                style={[styles.pill, unit === u && styles.active]}
+                style={[
+                  styles.unitPill,
+                  unit === u && { backgroundColor: JOURNAL.darkTrack },
+                ]}
                 onPress={() => setUnit(u)}
               >
-                <Text style={styles.buttonText}>{u}</Text>
+                <Text
+                  style={[
+                    styles.darkCaption,
+                    unit === u && { color: JOURNAL.lime },
+                  ]}
+                >
+                  {u}
+                </Text>
               </TouchableOpacity>
             ))}
           </View>
         </View>
-        <Text style={styles.number}>
-          {recorded.length ? format(current) : '—'}{' '}
-          <Text style={styles.text}>{unit}</Text>
+        <Text style={styles.darkCaption}>
+          {Math.round(progress * 100)}% toward goal · dates are spaced by
+          elapsed time.
         </Text>
-        <Text style={styles.text}>
-          Target {format(userProfile.targetWeightKg)} {unit} ·{' '}
-          {Math.round(progress * 100)}% toward target
-        </Text>
-        {chart.points.length ? (
-          <>
-            <Svg
-              width="100%"
-              height={height}
-              viewBox={`0 0 ${width} ${height}`}
-              accessibilityLabel={`Weight history with ${logs.length} entries. Goal ${format(userProfile.targetWeightKg)} ${unit}.`}
-            >
-              <Line
-                x1={20}
-                x2={width - 20}
-                y1={chart.goalY}
-                y2={chart.goalY}
-                stroke={JOURNAL.muted}
-                strokeDasharray="5 4"
-              />
-              <Polyline
-                points={chart.points.map((p) => `${p.x},${p.y}`).join(' ')}
-                stroke={JOURNAL.accent}
-                strokeWidth={3}
-                fill="none"
-              />
-              {chart.points.map((p) => (
-                <Circle
-                  key={p.log.id}
-                  cx={p.x}
-                  cy={p.y}
-                  r={3}
-                  fill={JOURNAL.accent}
-                />
-              ))}
-            </Svg>
-            <View style={styles.header}>
-              <Text style={styles.caption}>{logs[0].date}</Text>
-              <Text style={styles.caption}>{logs.at(-1)?.date}</Text>
-            </View>
-            <Text style={styles.caption}>
-              Dashed line: target. Horizontal spacing represents elapsed time.
+      </View>
+      <View style={styles.nutritionCards}>
+        <View style={[styles.card, { flex: 1 }]}>
+          <Text style={styles.caption}>Recorded average</Text>
+          <Text style={styles.statNumber}>
+            {summary.averageCalories.toLocaleString()}{' '}
+            <Text style={styles.caption}>kcal</Text>
+          </Text>
+          <Text style={styles.caption}>
+            {summary.loggedDays} / {dates.length} days logged. Unlogged days
+            count as zero records.
+          </Text>
+        </View>
+        <View style={[styles.card, { flex: 1 }]}>
+          <Text style={styles.caption}>Within target</Text>
+          <Text style={styles.statNumber}>
+            {summary.adherence}
+            <Text style={styles.caption}>% of days</Text>
+          </Text>
+          <Text style={styles.caption}>
+            Days within 90–110% of your calorie target.
+          </Text>
+        </View>
+      </View>
+      <View style={styles.streak}>
+        <Flame size={22} color={JOURNAL.accent} />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.record}>
+            {stats.currentStreak} {stats.currentStreak === 1 ? 'day' : 'days'}{' '}
+            logging streak
+          </Text>
+          <Text style={styles.caption}>
+            Your best: {stats.bestStreak}{' '}
+            {stats.bestStreak === 1 ? 'day' : 'days'}
+          </Text>
+        </View>
+      </View>
+      <View style={styles.card}>
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityState={{ expanded: energyOpen }}
+          style={tempo.between}
+          onPress={() => setEnergyOpen(!energyOpen)}
+        >
+          <Text style={styles.subtitle}>Energy estimate</Text>
+          {energyOpen ? (
+            <ChevronUp size={20} color={JOURNAL.muted} />
+          ) : (
+            <ChevronDown size={20} color={JOURNAL.muted} />
+          )}
+        </TouchableOpacity>
+        {energyOpen && (
+          <View>
+            <Text style={styles.text}>Estimated BMR: {plan.bmr} kcal/day</Text>
+            <Text style={styles.text}>
+              Estimated daily expenditure: {plan.tdee} kcal/day
             </Text>
-          </>
-        ) : (
-          <Text style={styles.text}>No weigh-ins in this period.</Text>
+            <Text style={styles.text}>
+              Your target: {goals.calories} kcal/day ({balance >= 0 ? '+' : ''}
+              {balance} relative to estimated expenditure)
+            </Text>
+            <Text style={styles.caption}>
+              Based on your profile. These estimates do not predict a date for
+              reaching your weight goal.
+            </Text>
+          </View>
         )}
-      </View>
-      <View style={styles.card}>
-        <Text style={styles.subtitle}>Recorded nutrition</Text>
-        <Text style={styles.number}>
-          {summary.averageCalories} <Text style={styles.text}>kcal/day</Text>
-        </Text>
-        <Text style={styles.text}>
-          {summary.loggedDays}/{dates.length} days logged. Averages include days
-          without records as zero.
-        </Text>
-        <Text style={styles.text}>
-          {summary.adherence}% of days within 90–110% of your calorie target
-        </Text>
-        <Text style={styles.caption}>
-          Current streak {stats.currentStreak} days · Best {stats.bestStreak}{' '}
-          days
-        </Text>
-      </View>
-      <View style={styles.card}>
-        <Text style={styles.subtitle}>Energy estimate</Text>
-        <Text style={styles.text}>Estimated BMR: {plan.bmr} kcal/day</Text>
-        <Text style={styles.text}>
-          Estimated daily expenditure: {plan.tdee} kcal/day
-        </Text>
-        <Text style={styles.text}>
-          Your target: {goals.calories} kcal/day ({balance >= 0 ? '+' : ''}
-          {balance} relative to estimated expenditure)
-        </Text>
-        <Text style={styles.caption}>
-          Based on your profile. These estimates do not predict a date for
-          reaching your weight goal.
-        </Text>
       </View>
       <MilestoneBadges badges={milestoneBadges} />
       <Text
@@ -321,77 +394,84 @@ export default function AnalyticsScreen() {
   );
 }
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: JOURNAL.paper },
-  body: { padding: 24, paddingBottom: 32 },
-  header: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  title: {
-    fontFamily: FONTS.serif,
-    fontSize: 30,
-    color: JOURNAL.ink,
-    flexShrink: 1,
-  },
-  subtitle: { fontFamily: FONTS.serif, fontSize: 22, color: JOURNAL.ink },
+  page: tempo.page,
+  body: tempo.body,
+  header: tempo.between,
+  subtitle: tempo.sectionTitle,
+  text: { ...tempo.text, marginVertical: 8 },
+  caption: { ...tempo.caption, fontSize: 11 },
   filters: {
     flexDirection: 'row',
-    gap: 8,
     flexWrap: 'wrap',
-    marginVertical: 24,
+    gap: 4,
+    backgroundColor: JOURNAL.soft,
+    padding: 4,
+    borderRadius: 16,
+    marginBottom: 20,
   },
-  units: { flexDirection: 'row', gap: 8 },
+  pill: {
+    flex: 1,
+    minWidth: 42,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 4,
+    borderRadius: 12,
+  },
+  active: { backgroundColor: JOURNAL.surface },
   button: {
     minHeight: 48,
-    minWidth: 48,
-    padding: 12,
+    paddingHorizontal: 12,
     justifyContent: 'center',
-    backgroundColor: JOURNAL.soft,
     borderRadius: 12,
+    backgroundColor: JOURNAL.soft,
   },
-  buttonText: { fontSize: 14, color: JOURNAL.ink },
-  pill: {
+  buttonText: { fontFamily: FONTS.semibold, fontSize: 11, color: JOURNAL.ink },
+  units: { flexDirection: 'row', gap: 4 },
+  unitPill: {
     minHeight: 48,
-    padding: 12,
+    minWidth: 44,
+    alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: JOURNAL.surface,
     borderRadius: 12,
   },
-  active: {
-    backgroundColor: JOURNAL.soft,
-    borderWidth: 1,
-    borderColor: JOURNAL.line,
+  weightCard: { ...tempo.darkCard, padding: 20 },
+  darkCaption: { ...tempo.darkCaption, fontSize: 11 },
+  change: tempo.darkTag,
+  weightNumber: {
+    fontFamily: FONTS.bold,
+    fontSize: 52,
+    letterSpacing: -2,
+    color: JOURNAL.surface,
+    marginTop: 20,
+    marginBottom: 4,
   },
-  card: {
-    backgroundColor: JOURNAL.surface,
-    padding: 20,
+  chart: { marginTop: 24, marginBottom: 8 },
+  nutritionCards: { flexDirection: 'row', gap: 10 },
+  card: { ...tempo.card, padding: 16 },
+  statNumber: {
+    fontFamily: FONTS.bold,
+    fontSize: 26,
+    color: JOURNAL.ink,
+    marginVertical: 8,
+    letterSpacing: -1,
+  },
+  streak: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
+    backgroundColor: JOURNAL.soft,
+    padding: 16,
     borderRadius: 18,
     marginBottom: 16,
   },
-  number: {
-    fontSize: 30,
-    fontWeight: '500',
-    color: JOURNAL.ink,
-    marginVertical: 12,
-    fontVariant: ['tabular-nums'],
-  },
-  text: {
-    fontSize: 14,
-    lineHeight: 22,
-    color: JOURNAL.muted,
-    marginVertical: 4,
-  },
-  caption: { fontSize: 12, lineHeight: 20, color: JOURNAL.muted, marginTop: 8 },
   weighIn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 16,
     borderTopWidth: 1,
     borderTopColor: JOURNAL.line,
+    paddingVertical: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
-  record: { fontSize: 16, color: JOURNAL.ink },
+  record: { fontFamily: FONTS.semibold, fontSize: 14, color: JOURNAL.ink },
 });

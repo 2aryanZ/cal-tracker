@@ -1,7 +1,11 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Image } from 'expo-image';
-import { Coffee, Soup, Utensils, Apple, Plus } from 'lucide-react-native';
+import Coffee from 'lucide-react-native/icons/coffee';
+import Soup from 'lucide-react-native/icons/soup';
+import Utensils from 'lucide-react-native/icons/utensils';
+import Apple from 'lucide-react-native/icons/apple';
+import Plus from 'lucide-react-native/icons/plus';
 import type { FoodEntry, MealType } from '@/types/nutrition';
 import { JOURNAL, FONTS } from '@/constants/theme';
 interface MealCardProps {
@@ -28,17 +32,6 @@ export const MealCard = React.memo(function MealCard({
   const Icon = icons[type];
   return (
     <View style={styles.section}>
-      <View style={styles.header}>
-        <Text style={styles.label}>{title.toUpperCase()}</Text>
-        <TouchableOpacity
-          accessibilityRole="button"
-          accessibilityLabel={`Add ${title.toLowerCase()}`}
-          onPress={() => onAddPress(type)}
-          style={styles.add}
-        >
-          <Plus size={18} color={JOURNAL.accent} />
-        </TouchableOpacity>
-      </View>
       {entries.length ? (
         entries.map((item) => (
           <TouchableOpacity
@@ -62,6 +55,13 @@ export const MealCard = React.memo(function MealCard({
               </View>
             )}
             <View style={styles.info}>
+              <Text style={styles.label}>
+                {title.toUpperCase()} ·{' '}
+                {new Date(item.timestamp).toLocaleTimeString([], {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </Text>
               <Text style={styles.name}>{item.name}</Text>
               <Text style={styles.detail}>
                 {item.portionSize || '1 serving'} ·{' '}
@@ -86,29 +86,37 @@ export const MealCard = React.memo(function MealCard({
           onPress={() => onAddPress(type)}
           style={styles.empty}
         >
+          <View>
+            <Text style={styles.name}>{title}</Text>
+            <Text style={styles.detail}>No meals recorded · add a meal</Text>
+          </View>
+          <View style={styles.add}>
+            <Plus size={18} color={JOURNAL.accent} />
+          </View>
+        </TouchableOpacity>
+      )}
+      {entries.length > 0 && (
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel={`Add ${title.toLowerCase()}`}
+          onPress={() => onAddPress(type)}
+          style={styles.more}
+        >
+          <Plus size={14} color={JOURNAL.accent} />
           <Text style={styles.detail}>Add {title.toLowerCase()}</Text>
-          <Plus size={16} color={JOURNAL.accent} />
         </TouchableOpacity>
       )}
     </View>
   );
 });
 const styles = StyleSheet.create({
-  section: {
-    borderTopWidth: 1,
-    borderTopColor: JOURNAL.line,
-    paddingVertical: 8,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
+  section: { borderBottomWidth: 1, borderBottomColor: JOURNAL.line },
   label: {
-    fontSize: 12,
-    letterSpacing: 1,
+    fontFamily: FONTS.semibold,
+    fontSize: 10,
+    letterSpacing: 0.4,
     color: JOURNAL.muted,
-    fontWeight: '600',
+    marginBottom: 4,
   },
   add: {
     minWidth: 48,
@@ -120,12 +128,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
     alignItems: 'center',
-    paddingBottom: 16,
-    paddingTop: 4,
+    paddingVertical: 12,
   },
   image: {
-    width: 48,
-    height: 48,
+    width: 40,
+    height: 40,
     borderRadius: 12,
     backgroundColor: JOURNAL.soft,
     alignItems: 'center',
@@ -133,20 +140,36 @@ const styles = StyleSheet.create({
   },
   info: { flex: 1, minWidth: 0 },
   name: {
-    fontFamily: FONTS.sans,
-    fontSize: 16,
+    fontFamily: FONTS.semibold,
+    fontSize: 13,
     color: JOURNAL.ink,
-    lineHeight: 23,
-    fontWeight: '500',
+    lineHeight: 20,
   },
-  detail: { fontSize: 12, color: JOURNAL.muted, lineHeight: 19 },
+  detail: {
+    fontFamily: FONTS.sans,
+    fontSize: 10,
+    color: JOURNAL.muted,
+    lineHeight: 17,
+  },
   energy: { alignItems: 'flex-end' },
-  calories: { fontSize: 18, color: JOURNAL.ink, fontVariant: ['tabular-nums'] },
+  calories: {
+    fontFamily: FONTS.bold,
+    fontSize: 15,
+    color: JOURNAL.ink,
+    fontVariant: ['tabular-nums'],
+  },
   empty: {
-    minHeight: 48,
+    minHeight: 64,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingBottom: 8,
+    gap: 8,
+  },
+  more: {
+    minHeight: 48,
+    flexDirection: 'row',
+    gap: 4,
+    alignItems: 'center',
+    alignSelf: 'flex-end',
   },
 });

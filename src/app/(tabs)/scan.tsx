@@ -19,17 +19,15 @@ import {
   useFocusEffect,
 } from 'expo-router';
 
-import {
-  X,
-  Zap,
-  Image as ImageIcon,
-  Scan,
-  QrCode,
-  Tag,
-  SwitchCamera,
-  Camera as CameraIcon,
-  Flame,
-} from 'lucide-react-native';
+import X from 'lucide-react-native/icons/x';
+import Zap from 'lucide-react-native/icons/zap';
+import ImageIcon from 'lucide-react-native/icons/image';
+import Scan from 'lucide-react-native/icons/scan';
+import QrCode from 'lucide-react-native/icons/qr-code';
+import Tag from 'lucide-react-native/icons/tag';
+import SwitchCamera from 'lucide-react-native/icons/switch-camera';
+import CameraIcon from 'lucide-react-native/icons/camera';
+import Flame from 'lucide-react-native/icons/flame';
 import {
   analyzeFoodImage,
   analyzeNutritionLabelImage,
@@ -929,7 +927,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 24,
     height: 24,
-    borderColor: '#10B981',
+    borderColor: PALETTE[500],
   },
   cornerTopLeft: {
     top: 0,
@@ -962,8 +960,8 @@ const styles = StyleSheet.create({
   laserLine: {
     width: '90%',
     height: 2,
-    backgroundColor: '#10B981',
-    shadowColor: '#10B981',
+    backgroundColor: PALETTE[500],
+    shadowColor: PALETTE[500],
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.9,
     shadowRadius: 6,

@@ -1,4 +1,4 @@
-import {SafeAreaView} from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import React, { useState } from 'react';
 import {
   View,
@@ -11,20 +11,21 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
-import {
-  X,
-  Sparkles,
-  Mail,
-  Lock,
-  User as UserIcon,
-  CheckCircle2,
-  ArrowRight,
-  Shield,
-} from 'lucide-react-native';
+import X from 'lucide-react-native/icons/x';
+import Utensils from 'lucide-react-native/icons/utensils';
+import Mail from 'lucide-react-native/icons/mail';
+import Lock from 'lucide-react-native/icons/lock';
+import UserIcon from 'lucide-react-native/icons/user';
+import CheckCircle2 from 'lucide-react-native/icons/circle-check';
+import ArrowRight from 'lucide-react-native/icons/arrow-right';
+import Shield from 'lucide-react-native/icons/shield';
 
-import { PALETTE, FONTS } from '@/constants/theme';
+import { PALETTE, FONTS, JOURNAL } from '@/constants/theme';
 import { useNutrition } from '@/context/NutritionContext';
-import { triggerLightImpact, triggerSuccessFeedback } from '@/services/hapticsService';
+import {
+  triggerLightImpact,
+  triggerSuccessFeedback,
+} from '@/services/hapticsService';
 
 interface AuthModalProps {
   visible: boolean;
@@ -32,10 +33,7 @@ interface AuthModalProps {
   initialStep?: 1 | 2 | 3;
 }
 
-export function AuthModal({
-  visible,
-  onClose,
-}: AuthModalProps) {
+export function AuthModal({ visible, onClose }: AuthModalProps) {
   const { signIn, signInWithGoogle } = useNutrition();
 
   const [authMethod, setAuthMethod] = useState<'google' | 'email'>('google');
@@ -46,7 +44,9 @@ export function AuthModal({
   const [isSignUpMode, setIsSignUpMode] = useState(false);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [loadingProvider, setLoadingProvider] = useState<'email' | 'google' | null>(null);
+  const [loadingProvider, setLoadingProvider] = useState<
+    'email' | 'google' | null
+  >(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleGoogleConnect = async () => {
@@ -56,7 +56,11 @@ export function AuthModal({
     try {
       if (await signInWithGoogle()) onClose();
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to connect to Google. Please try again.');
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Unable to connect to Google. Please try again.',
+      );
     } finally {
       setIsSubmitting(false);
       setLoadingProvider(null);
@@ -82,10 +86,16 @@ export function AuthModal({
         onClose();
       } else {
         setIsSignUpMode(false);
-        setErrorMessage('Check your email to confirm your account, then sign in.');
+        setErrorMessage(
+          'Check your email to confirm your account, then sign in.',
+        );
       }
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to sign in. Please try again.');
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'Unable to sign in. Please try again.',
+      );
     } finally {
       setIsSubmitting(false);
       setLoadingProvider(null);
@@ -95,53 +105,84 @@ export function AuthModal({
   if (!visible) return null;
 
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="none"
+      onRequestClose={onClose}
+    >
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.cardContainer}>
           {/* Header Bar */}
           <View style={styles.topNavRow}>
             <View style={styles.brandTitleRow}>
               <View style={styles.logoBadge}>
-                <Sparkles size={16} color={PALETTE[50]} />
+                <Utensils size={16} color={PALETTE[50]} />
               </View>
               <Text style={styles.brandTitle}>Cal Tracker Account</Text>
             </View>
 
-            <TouchableOpacity accessibilityRole="button"
+            <TouchableOpacity
               style={styles.closeBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Close account sign-in"
               onPress={onClose}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              activeOpacity={0.7}>
+              activeOpacity={0.7}
+            >
               <X size={18} color={PALETTE[950]} />
             </TouchableOpacity>
           </View>
 
           {/* Auth Method Switcher Tabs */}
           <View style={styles.tabSwitcher}>
-            <TouchableOpacity accessibilityRole="button"
-              style={[styles.switchTab, authMethod === 'google' && styles.switchTabActive]}
+            <TouchableOpacity
+              accessibilityRole="button"
+              style={[
+                styles.switchTab,
+                authMethod === 'google' && styles.switchTabActive,
+              ]}
               onPress={() => {
                 triggerLightImpact();
                 setErrorMessage(null);
                 setAuthMethod('google');
               }}
-              activeOpacity={0.8}>
+              activeOpacity={0.8}
+            >
               <Text style={styles.googleTabIcon}>G</Text>
-              <Text style={[styles.switchTabText, authMethod === 'google' && styles.switchTabTextActive]}>
+              <Text
+                style={[
+                  styles.switchTabText,
+                  authMethod === 'google' && styles.switchTabTextActive,
+                ]}
+              >
                 Google Sign-In
               </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity accessibilityRole="button"
-              style={[styles.switchTab, authMethod === 'email' && styles.switchTabActive]}
+            <TouchableOpacity
+              accessibilityRole="button"
+              style={[
+                styles.switchTab,
+                authMethod === 'email' && styles.switchTabActive,
+              ]}
               onPress={() => {
                 triggerLightImpact();
                 setErrorMessage(null);
                 setAuthMethod('email');
               }}
-              activeOpacity={0.8}>
-              <Mail size={15} color={authMethod === 'email' ? PALETTE[950] : PALETTE[500]} />
-              <Text style={[styles.switchTabText, authMethod === 'email' && styles.switchTabTextActive]}>
+              activeOpacity={0.8}
+            >
+              <Mail
+                size={15}
+                color={authMethod === 'email' ? PALETTE[950] : PALETTE[500]}
+              />
+              <Text
+                style={[
+                  styles.switchTabText,
+                  authMethod === 'email' && styles.switchTabTextActive,
+                ]}
+              >
                 Email & Password
               </Text>
             </TouchableOpacity>
@@ -151,7 +192,8 @@ export function AuthModal({
             style={styles.scrollBody}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled">
+            keyboardShouldPersistTaps="handled"
+          >
             {/* Error Banner */}
             {errorMessage ? (
               <View style={styles.errorBox}>
@@ -170,16 +212,19 @@ export function AuthModal({
                   </View>
                   <Text style={styles.heroTitle}>Continue with Google</Text>
                   <Text style={styles.heroSub}>
-                    Sign in with your Google account to back up meal logs, water tracker, and streaks to your account.
+                    Sign in with your Google account to back up meal logs, water
+                    tracker, and streaks to your account.
                   </Text>
                 </View>
 
                 {/* Primary Google Button */}
-                <TouchableOpacity accessibilityRole="button"
+                <TouchableOpacity
+                  accessibilityRole="button"
                   style={styles.primaryGoogleBtn}
                   onPress={handleGoogleConnect}
                   disabled={isSubmitting}
-                  activeOpacity={0.85}>
+                  activeOpacity={0.85}
+                >
                   {loadingProvider === 'google' ? (
                     <ActivityIndicator size="small" color={PALETTE[50]} />
                   ) : (
@@ -187,7 +232,9 @@ export function AuthModal({
                       <View style={styles.googleBtnBadge}>
                         <Text style={styles.googleBtnBadgeText}>G</Text>
                       </View>
-                      <Text style={styles.primaryGoogleBtnText}>Sign In with Google</Text>
+                      <Text style={styles.primaryGoogleBtnText}>
+                        Sign In with Google
+                      </Text>
                       <ArrowRight size={16} color={PALETTE[50]} />
                     </>
                   )}
@@ -197,15 +244,21 @@ export function AuthModal({
                 <View style={styles.featuresList}>
                   <View style={styles.featureItem}>
                     <CheckCircle2 size={14} color={PALETTE[700]} />
-                    <Text style={styles.featureText}>Instant cloud backup to Supabase</Text>
+                    <Text style={styles.featureText}>
+                      Instant cloud backup to Supabase
+                    </Text>
                   </View>
                   <View style={styles.featureItem}>
                     <CheckCircle2 size={14} color={PALETTE[700]} />
-                    <Text style={styles.featureText}>Choose your account securely with Google</Text>
+                    <Text style={styles.featureText}>
+                      Choose your account securely with Google
+                    </Text>
                   </View>
                   <View style={styles.featureItem}>
                     <Shield size={14} color={PALETTE[700]} />
-                    <Text style={styles.featureText}>End-to-end multi-device synchronization</Text>
+                    <Text style={styles.featureText}>
+                      Sync across your signed-in devices
+                    </Text>
                   </View>
                 </View>
               </View>
@@ -215,7 +268,11 @@ export function AuthModal({
               /* ============================================================ */
               <View style={styles.tabContent}>
                 <View style={styles.googleHeroBox}>
-                  <Text style={styles.heroTitle}>{isSignUpMode ? 'Create Free Account' : 'Sign In with Email'}</Text>
+                  <Text style={styles.heroTitle}>
+                    {isSignUpMode
+                      ? 'Create Free Account'
+                      : 'Sign In with Email'}
+                  </Text>
                   <Text style={styles.heroSub}>
                     {isSignUpMode
                       ? 'Sign up to protect your calories, water logs, and streak across devices.'
@@ -225,23 +282,43 @@ export function AuthModal({
 
                 {/* Sub-mode selector */}
                 <View style={styles.subModePills}>
-                  <TouchableOpacity accessibilityRole="button"
-                    style={[styles.subModePill, !isSignUpMode && styles.subModePillActive]}
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    style={[
+                      styles.subModePill,
+                      !isSignUpMode && styles.subModePillActive,
+                    ]}
                     onPress={() => {
                       setIsSignUpMode(false);
                       setErrorMessage(null);
-                    }}>
-                    <Text style={[styles.subModePillText, !isSignUpMode && styles.subModePillTextActive]}>
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.subModePillText,
+                        !isSignUpMode && styles.subModePillTextActive,
+                      ]}
+                    >
                       Sign In
                     </Text>
                   </TouchableOpacity>
-                  <TouchableOpacity accessibilityRole="button"
-                    style={[styles.subModePill, isSignUpMode && styles.subModePillActive]}
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    style={[
+                      styles.subModePill,
+                      isSignUpMode && styles.subModePillActive,
+                    ]}
                     onPress={() => {
                       setIsSignUpMode(true);
                       setErrorMessage(null);
-                    }}>
-                    <Text style={[styles.subModePillText, isSignUpMode && styles.subModePillTextActive]}>
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.subModePillText,
+                        isSignUpMode && styles.subModePillTextActive,
+                      ]}
+                    >
                       Create Account
                     </Text>
                   </TouchableOpacity>
@@ -302,28 +379,34 @@ export function AuthModal({
                 </View>
 
                 {/* Primary Button */}
-                <TouchableOpacity accessibilityRole="button"
+                <TouchableOpacity
+                  accessibilityRole="button"
                   style={styles.primaryBtn}
                   onPress={handleEmailConnect}
                   disabled={isSubmitting}
-                  activeOpacity={0.85}>
+                  activeOpacity={0.85}
+                >
                   {loadingProvider === 'email' ? (
                     <ActivityIndicator size="small" color={PALETTE.white} />
                   ) : (
                     <Text style={styles.primaryBtnText}>
-                      {isSignUpMode ? 'Create Free Account' : 'Sign In with Email'}
+                      {isSignUpMode
+                        ? 'Create Free Account'
+                        : 'Sign In with Email'}
                     </Text>
                   )}
                 </TouchableOpacity>
 
                 {/* Toggle Sign Up / Sign In */}
-                <TouchableOpacity accessibilityRole="button"
+                <TouchableOpacity
+                  accessibilityRole="button"
                   style={styles.toggleModeBtn}
                   onPress={() => {
                     setIsSignUpMode(!isSignUpMode);
                     setErrorMessage(null);
                   }}
-                  activeOpacity={0.7}>
+                  activeOpacity={0.7}
+                >
                   <Text style={styles.toggleModeText}>
                     {isSignUpMode
                       ? 'Already have an account? Sign In'
@@ -334,8 +417,15 @@ export function AuthModal({
             )}
 
             {/* Skip / Guest Mode */}
-            <TouchableOpacity accessibilityRole="button" style={styles.guestBtn} onPress={onClose} activeOpacity={0.6}>
-              <Text style={styles.guestBtnText}>Continue as Guest / Skip for now</Text>
+            <TouchableOpacity
+              accessibilityRole="button"
+              style={styles.guestBtn}
+              onPress={onClose}
+              activeOpacity={0.6}
+            >
+              <Text style={styles.guestBtnText}>
+                Continue as Guest / Skip for now
+              </Text>
             </TouchableOpacity>
           </ScrollView>
         </View>
@@ -347,7 +437,7 @@ export function AuthModal({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: 'rgba(5, 46, 22, 0.75)',
+    backgroundColor: JOURNAL.scrim,
     justifyContent: 'flex-end',
     alignItems: 'center',
   },
@@ -396,8 +486,8 @@ const styles = StyleSheet.create({
     color: PALETTE[950],
   },
   closeBtn: {
-    width: 32,
-    height: 32,
+    width: 48,
+    height: 48,
     borderRadius: 16,
     backgroundColor: PALETTE[100],
     alignItems: 'center',

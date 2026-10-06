@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
-import { Flame } from 'lucide-react-native';
+import Flame from 'lucide-react-native/icons/flame';
 import { PALETTE } from '@/constants/theme';
 
 interface CalorieRingProps {

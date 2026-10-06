@@ -1,6 +1,10 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { Sparkles, ArrowRight, Zap, Target, Flame } from 'lucide-react-native';
+import Sparkles from 'lucide-react-native/icons/sparkles';
+import ArrowRight from 'lucide-react-native/icons/arrow-right';
+import Zap from 'lucide-react-native/icons/zap';
+import Target from 'lucide-react-native/icons/target';
+import Flame from 'lucide-react-native/icons/flame';
 import { useNutrition } from '@/context/NutritionContext';
 import { generateCoachInsight } from '@/services/aiCoachService';
 import { PALETTE, FONTS } from '@/constants/theme';

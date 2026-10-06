@@ -54,6 +54,7 @@ function Content({
     [calories, protein, carbs, fats, waterMl],
   );
   const requestId = useRef(0);
+  const selecting = useRef(false);
   useEffect(() => {
     const id = ++requestId.current;
     const controller = new AbortController();
@@ -75,6 +76,8 @@ function Content({
     };
   }, [targets, preference, revision]);
   const select = async (p: DietaryPreference) => {
+    if (p === preference || selecting.current || saving) return;
+    selecting.current = true;
     try {
       await setDietaryPreference(p);
       setBusy(true);
@@ -84,6 +87,8 @@ function Content({
       setPreference(p);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unable to save preference.');
+    } finally {
+      selecting.current = false;
     }
   };
   const log = async (meal: AiMealPlanItem) => {
@@ -109,7 +114,7 @@ function Content({
             accessibilityRole="button"
             onPress={onClose}
           >
-            <Text>Close</Text>
+            <Text style={styles.text}>Close</Text>
           </TouchableOpacity>
         </View>
         <Text style={styles.note}>
@@ -122,10 +127,11 @@ function Content({
               key={p}
               accessibilityRole="button"
               accessibilityState={{ selected: p === preference }}
+              disabled={p === preference || !!saving}
               onPress={() => select(p)}
               style={[styles.pill, p === preference && styles.active]}
             >
-              <Text>{p.replaceAll('_', ' ')}</Text>
+              <Text style={styles.text}>{p.replaceAll('_', ' ')}</Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
@@ -148,7 +154,7 @@ function Content({
                 <Text style={styles.note}>
                   {meal.portionSize} · {meal.calories} kcal
                 </Text>
-                <Text>
+                <Text style={styles.text}>
                   P {meal.protein}g · C {meal.carbs}g · F {meal.fats}g
                 </Text>
                 <Text style={styles.note}>{meal.ingredients.join('\n')}</Text>
@@ -159,7 +165,7 @@ function Content({
                   style={styles.primary}
                 >
                   {saving === meal.mealType ? (
-                    <ActivityIndicator color="white" />
+                    <ActivityIndicator color={JOURNAL.ink} />
                   ) : (
                     <Text style={styles.primaryText}>
                       {logged.includes(meal.mealType)
@@ -184,7 +190,7 @@ function Content({
             setRevision((r) => r + 1);
           }}
         >
-          <Text>Generate new ideas</Text>
+          <Text style={styles.text}>Generate new ideas</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -199,6 +205,7 @@ export function MealPlanModal(props: Props) {
   );
 }
 const styles = StyleSheet.create({
+  text: { fontFamily: FONTS.sans, fontSize: 14, color: JOURNAL.ink },
   overlay: {
     flex: 1,
     backgroundColor: JOURNAL.scrim,
@@ -219,6 +226,7 @@ const styles = StyleSheet.create({
   },
   title: { fontFamily: FONTS.serif, fontSize: 21, color: PALETTE[950] },
   note: {
+    fontFamily: FONTS.sans,
     fontSize: 14,
     lineHeight: 21,
     color: PALETTE[600],
@@ -239,16 +247,26 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     marginVertical: 8,
   },
-  slot: { fontSize: 13, color: PALETTE[600], marginBottom: 8 },
+  slot: {
+    fontFamily: FONTS.sans,
+    fontSize: 13,
+    color: PALETTE[600],
+    marginBottom: 8,
+  },
   close: { minHeight: 44, minWidth: 44, justifyContent: 'center' },
   primary: {
     minHeight: 48,
-    backgroundColor: PALETTE[900],
+    backgroundColor: JOURNAL.lime,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     marginVertical: 12,
   },
-  primaryText: { fontSize: 16, color: 'white' },
-  error: { color: JOURNAL.error, fontSize: 14, lineHeight: 20 },
+  primaryText: { fontFamily: FONTS.bold, fontSize: 16, color: JOURNAL.ink },
+  error: {
+    fontFamily: FONTS.sans,
+    color: JOURNAL.error,
+    fontSize: 14,
+    lineHeight: 20,
+  },
 });

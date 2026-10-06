@@ -1,7 +1,9 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
-import { Drumstick, Wheat, Droplet } from 'lucide-react-native';
+import Drumstick from 'lucide-react-native/icons/drumstick';
+import Wheat from 'lucide-react-native/icons/wheat';
+import Droplet from 'lucide-react-native/icons/droplet';
 import { PALETTE, FONTS } from '@/constants/theme';
 
 interface MacroMiniCardProps {

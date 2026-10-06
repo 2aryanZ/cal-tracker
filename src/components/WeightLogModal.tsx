@@ -12,7 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { X } from 'lucide-react-native';
+import X from 'lucide-react-native/icons/x';
 import { JOURNAL, FONTS } from '@/constants/theme';
 import { lbsToKg, kgToLbs } from '@/services/tdeeCalculator';
 import { getTodayDateString } from '@/services/storage';
@@ -151,7 +151,7 @@ function WeightForm({
             {busy ? (
               <ActivityIndicator
                 accessibilityLabel="Saving weigh-in"
-                color={JOURNAL.surface}
+                color={JOURNAL.ink}
               />
             ) : (
               <Text style={styles.saveText}>Save Entry</Text>
@@ -192,7 +192,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  caption: {
+  caption: { fontFamily: FONTS.sans,
     fontSize: 14,
     color: JOURNAL.muted,
     lineHeight: 22,
@@ -211,9 +211,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: JOURNAL.line,
   },
-  text: { fontSize: 15, color: JOURNAL.ink },
-  label: { fontSize: 14, color: JOURNAL.muted, marginTop: 24, marginBottom: 8 },
-  input: {
+  text: { fontFamily: FONTS.sans,  fontSize: 15, color: JOURNAL.ink },
+  label: { fontFamily: FONTS.sans,  fontSize: 14, color: JOURNAL.muted, marginTop: 24, marginBottom: 8 },
+  input: { fontFamily: FONTS.sans,
     minHeight: 52,
     padding: 14,
     borderWidth: 1,
@@ -227,10 +227,10 @@ const styles = StyleSheet.create({
     minHeight: 52,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: JOURNAL.accent,
+    backgroundColor: JOURNAL.lime,
     borderRadius: 12,
     marginTop: 32,
   },
-  saveText: { fontSize: 16, fontWeight: '600', color: JOURNAL.surface },
-  error: { color: JOURNAL.error, fontSize: 14, lineHeight: 22, marginTop: 16 },
+  saveText: { fontFamily: FONTS.sans,  fontSize: 16, fontWeight: '600', color: JOURNAL.ink },
+  error: { fontFamily: FONTS.sans,  color: JOURNAL.error, fontSize: 14, lineHeight: 22, marginTop: 16 },
 });
