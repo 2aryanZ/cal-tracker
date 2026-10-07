@@ -1,3 +1,4 @@
+import { clearMealPlanCache } from './mealPlanCache';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { FoodEntry, MacroTargets, UserStats, NotificationSettings, UserProfile, UserAccount, WeightEntry, DietaryPreference, FavoriteMeal, HealthSyncSettings, CommunityGroup, MilestoneBadge } from '@/types/nutrition';
 import { assertDate, assertNumber, calculateStats, newId, validateGoals, validateMeal, validateProfile, validateWeight } from './nutritionRules';
@@ -82,8 +83,7 @@ export function getStorageScope(): string { return scope; }
 export async function setStorageScope(userId: string | null): Promise<void> { return serial(async () => { scope = userId ?? 'guest'; await read(scope); }); }
 export async function initializeStorage(): Promise<void> { return serial(async () => { await read(scope); }); }
 export async function getSnapshot(): Promise<LocalSnapshot> { const owner = scope; return serial(() => read(owner)); }
-async function mutate<T>(callback: (s: LocalSnapshot, owner: string) => T): Promise<T> {
-    const owner = scope;
+async function mutate<T>(callback: (s: LocalSnapshot, owner: string) => T, owner = scope): Promise<T> {
     return serial(async () => { const s = await read(owner); const result = callback(s, owner); await AsyncStorage.setItem(keyFor(owner), JSON.stringify(s)); return result; });
 }
 export function toLocalDateString(d: Date): string { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
@@ -212,10 +212,10 @@ export async function applyCloudSnapshot(owner: string, cloud: Partial<LocalSnap
     });
 }
 export async function exportLocalData(): Promise<string> { const s = await getSnapshot(); return JSON.stringify({ format: 'cal-tracker', version: 2, exportedAt: new Date().toISOString(), ...s }, null, 2); }
-export async function resetLocalData(): Promise<void> { return mutate((s, o) => { for (const e of s.entries)
+export async function resetLocalData(): Promise<void> { const owner = scope; await clearMealPlanCache(owner); return mutate((s, o) => { for (const e of s.entries)
     change(s, o, 'food', e.id, null, 'delete'); for (const w of s.weights)
     change(s, o, 'weight', w.date, null, 'delete'); for (const date of Object.keys(s.waterLogs))
-    change(s, o, 'water', date, { date, waterMl: 0 }); s.entries = []; s.weights = []; s.waterLogs = {}; s.favorites = []; s.badges = {}; s.celebratedDates = []; preferences(s, o); }); }
+    change(s, o, 'water', date, { date, waterMl: 0 }); s.entries = []; s.weights = []; s.waterLogs = {}; s.favorites = []; s.badges = {}; s.celebratedDates = []; preferences(s, o); }, owner); }
 export async function resolvePendingChange(changeId: string, version: number, keepLocal: boolean, expectedOwner = scope): Promise<void> { return mutate((s, owner) => { if (owner !== expectedOwner)
     throw new Error('The account changed. Review again.'); const value = s.outbox.find(c => c.id === changeId); if (!value)
     throw new Error('The record changed while you were reviewing it. Refresh and review again.'); if (keepLocal) {

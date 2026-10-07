@@ -22,6 +22,7 @@
       "versionCode": 9,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png",
         "backgroundColor": "#152B30"
       },
       "permissions": [
@@ -46,7 +47,7 @@
         {
           "backgroundColor": "#152B30",
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 180,
+          "imageWidth": 160,
           "resizeMode": "contain"
         }
       ],
@@ -68,7 +69,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/images/icon.png",
+          "icon": "./assets/images/notification-icon.png",
           "color": "#305948"
         }
       ],

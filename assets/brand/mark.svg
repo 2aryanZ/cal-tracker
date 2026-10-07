@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>Cal Tracker — plate and leaf</title>
+  <defs>
+    <mask id="leaf-vein" maskUnits="userSpaceOnUse" x="340" y="340" width="340" height="340">
+      <rect x="340" y="340" width="340" height="340" fill="white" />
+      <path d="M416 594 L550 460" fill="none" stroke="black" stroke-width="24" stroke-linecap="round" />
+    </mask>
+  </defs>
+  <circle cx="512" cy="512" r="264" fill="none" stroke="#D1FA7A" stroke-width="40" />
+  <path d="M406 602 C359 483 475 372 628 396 C636 546 527 658 406 602 Z" fill="#D1FA7A" mask="url(#leaf-vein)" />
+</svg>

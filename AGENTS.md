@@ -35,3 +35,5 @@ Follow existing prefixes: `feat(scope):`, `fix(scope):`, and `chore(release):`. 
 Use `.env.example` as the configuration template. Keep credentials out of Git; `EXPO_PUBLIC_*` values are bundled into clients. Keep Gemini secrets server-side and preserve account isolation.
 
 Before writing code, read the exact [Expo SDK 57 documentation](https://docs.expo.dev/versions/v57.0.0/). Preserve unrelated working changes.
+
+After each verified logical project update, commit and push the changes to this GitHub repository, as requested by the owner. Preserve unrelated work and never commit credentials. Build or publish a new APK only when requested.

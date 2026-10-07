@@ -49,3 +49,6 @@ example
 *.aab
 *.ipa
 
+
+# Supabase CLI local metadata
+supabase/.temp/

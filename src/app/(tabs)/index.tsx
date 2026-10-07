@@ -343,13 +343,13 @@ export default function TodayScreen() {
         onClose={() => setPlan(false)}
         goals={goals}
         currentPreference={dietaryPreference}
-        onLogMealItem={async (item) => {
+        onLogMealItem={async (item, isAiGenerated) => {
           await logMeal({
             ...item,
             ingredients: undefined,
             date: getTodayDateString(),
-            source: 'text',
-            isAiGenerated: true,
+            source: isAiGenerated ? 'text' : 'manual',
+            isAiGenerated,
           });
         }}
       />

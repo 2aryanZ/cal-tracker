@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import Constants from 'expo-constants';
 import {
   View,
   Text,
@@ -397,7 +398,7 @@ export function SettingsScreen({ embedded = false }: { embedded?: boolean }) {
           />
         </View>
         <Text style={[tempo.caption, { textAlign: 'center', marginTop: 24 }]}>
-          Cal Tracker · 1.1.4 · Tempo
+          Cal Tracker{Constants.expoConfig?.version ? ` · ${Constants.expoConfig.version}` : ''} · Tempo
         </Text>
       </ScrollView>
       <TempoSheet
