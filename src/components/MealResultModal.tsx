@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -53,6 +53,7 @@ interface Props {
   imageUri?: string;
   sourceLabel?: string;
   nutritionSource?: FoodEntry['source'];
+  title?: string;
   onConfirm: (data: MealData) => void | Promise<void>;
   onDeleteEntry?: (id: string) => void | Promise<void>;
 }
@@ -65,6 +66,7 @@ function MealForm({
   imageUri,
   sourceLabel,
   nutritionSource,
+  title,
   onConfirm,
   onDeleteEntry,
 }: Omit<Props, 'visible'>) {
@@ -96,6 +98,7 @@ function MealForm({
     [error, setError] = useState(''),
     [search, setSearch] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const actionBusy = useRef(false);
   const build = (): MealData => {
     if (Object.values(nutrition).some((value) => !value.trim()))
       throw new Error('Enter all nutrition values. Zero is allowed.');
@@ -128,7 +131,8 @@ function MealForm({
     return data;
   };
   const run = async (action: () => Promise<void>) => {
-    if (busy) return;
+    if (actionBusy.current) return;
+    actionBusy.current = true;
     setBusy(true);
     setError('');
     try {
@@ -138,6 +142,7 @@ function MealForm({
         e instanceof Error ? e.message : 'Unable to complete this action.',
       );
     } finally {
+      actionBusy.current = false;
       setBusy(false);
     }
   };
@@ -183,11 +188,11 @@ function MealForm({
         >
           <View style={styles.header}>
             <Text accessibilityRole="header" style={styles.title}>
-              {editingEntry
+              {title ?? (editingEntry
                 ? 'Edit meal'
                 : result
                   ? 'Review meal'
-                  : 'Add a meal'}
+                  : 'Add a meal')}
             </Text>
             <TouchableOpacity
               disabled={busy}
@@ -207,6 +212,11 @@ function MealForm({
                   ? 'Review the nutrition values before saving. Estimates may need adjusting.'
                   : 'Enter nutrition from a food label or your own measurements.')}
           </Text>
+          {nutritionSource === 'photo' && result && result.confidence < 0.5 ? (
+            <Text accessibilityRole="alert" style={styles.error}>
+              The photo is unclear. Check every value and the portion, or retake a clearer photo.
+            </Text>
+          ) : null}
           {error ? (
             <Text accessibilityRole="alert" style={styles.error}>
               {error}
@@ -341,6 +351,12 @@ function MealForm({
               {photo ? 'Change meal photo' : 'Add a photo (optional)'}
             </Text>
           </TouchableOpacity>
+          {nutritionSource === 'photo' ? (
+            <Text style={styles.caption}>
+              Changing the attached photo keeps these nutrition values. Close
+              this form and scan again to estimate a different meal.
+            </Text>
+          ) : null}
           <View style={styles.notesHeader}>
             <Text style={styles.section}>Ingredient notes</Text>
             <TouchableOpacity

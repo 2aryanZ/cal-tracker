@@ -1,5 +1,5 @@
 import { SafeAreaView } from 'react-native-safe-area-context';
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useLayoutEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Platform,
-  Alert,
+  ScrollView,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { CameraView, useCameraPermissions, CameraType } from 'expo-camera';
@@ -34,6 +34,11 @@ import {
 } from '@/services/aiFoodService';
 import { fetchProductByBarcode } from '@/services/barcodeService';
 import { MealResultModal } from '@/components/MealResultModal';
+import { AuthModal } from '@/components/AuthModal';
+import { createScanSession } from '@/services/scanSession';
+import { prepareMealPhoto, type MealPhotoInput, type PreparedMealPhoto } from '@/services/mealPhotoService';
+import { NutritionRequestError } from '@/services/nutritionApi';
+import { getTodayDateString } from '@/services/storage';
 import { useNutrition } from '@/context/NutritionContext';
 import { AiFoodDetectionResult, MealType, FoodEntry } from '@/types/nutrition';
 import { PALETTE, FONTS, JOURNAL } from '@/constants/theme';
@@ -44,286 +49,203 @@ import {
 } from '@/services/hapticsService';
 
 export default function ScanScreen() {
+  const { userAccount } = useNutrition();
+  const owner = userAccount.isLoggedIn ? userAccount.id : null;
+  // Remount all photo/form state when accounts change, including any in-flight picker.
+  return <AccountScanner key={owner ?? 'guest'} accountOwner={owner} />;
+}
+function AccountScanner({ accountOwner }: { accountOwner: string | null }) {
   const router = useRouter();
   const params = useLocalSearchParams<{ mode?: string; mealType?: string }>();
   const isFocused = usePathname().endsWith('/scan');
-  const request = useRef<AbortController | null>(null);
-  const scanGeneration = useRef(0);
-  useEffect(
-    () => () => {
-      request.current?.abort();
-    },
-    [],
-  );
-  useEffect(() => {
-    if (!isFocused) request.current?.abort();
-  }, [isFocused]);
   const { logMeal } = useNutrition();
-
-  // Camera permissions & ref
+  const focused = useRef(isFocused);
+  useLayoutEffect(() => { focused.current = isFocused; }, [isFocused]);
+  const [scanSession] = useState(createScanSession);
+  const lastPhoto = useRef<MealPhotoInput | null>(null);
+  const preparedPhoto = useRef<PreparedMealPhoto | null>(null);
+  const draftOwner = useRef<string | null>(accountOwner);
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
-
+  const [cameraReady, setCameraReady] = useState(false);
   const [facing, setFacing] = useState<CameraType>('back');
   const [torch, setTorch] = useState(false);
-  const [selectedImage, setSelectedImage] = useState<string>('');
-  const [isScanning, setIsScanning] = useState(false);
+  const [selectedImage, setSelectedImage] = useState('');
+  const [phase, setPhase] = useState<'capture' | 'preparing' | 'analyzing' | 'lookup' | null>(null);
+  const isScanning = phase !== null;
+  const [scanError, setScanError] = useState('');
+  const [needsSignIn, setNeedsSignIn] = useState(false);
+  const [canRetry, setCanRetry] = useState(false);
+  const [authVisible, setAuthVisible] = useState(false);
   const [zoomLevel, setZoomLevel] = useState<'2x' | '1x'>('1x');
-  const [scanMode, setScanMode] = useState<'food' | 'barcode' | 'label'>(
-    params.mode === 'barcode'
-      ? 'barcode'
-      : params.mode === 'label'
-        ? 'label'
-        : 'food',
-  );
-  const [scanResult, setScanResult] = useState<AiFoodDetectionResult | null>(
-    null,
-  );
+  const [scanMode, setScanMode] = useState<'food' | 'barcode' | 'label'>('food');
+  const [scanResult, setScanResult] = useState<AiFoodDetectionResult | null>(null);
   const [resultModalVisible, setResultModalVisible] = useState(false);
-  const [resultSource, setResultSource] =
-    useState<FoodEntry['source']>('photo');
-  const mealType: MealType = ['breakfast', 'lunch', 'dinner', 'snack'].includes(
-    params.mealType ?? '',
-  )
-    ? (params.mealType as MealType)
-    : 'lunch';
-
-  // Debounce ref for barcode scanning to prevent multi-trigger
+  const [resultSource, setResultSource] = useState<FoodEntry['source']>('photo');
+  const mealType: MealType = ['breakfast', 'lunch', 'dinner', 'snack'].includes(params.mealType ?? '')
+    ? (params.mealType as MealType) : 'lunch';
   const lastScannedBarcodeRef = useRef<string | null>(null);
-  const isBarcodeLockedRef = useRef(false);
 
-  useFocusEffect(
-    useCallback(() => {
-      setScanMode(
-        params.mode === 'barcode'
-          ? 'barcode'
-          : params.mode === 'label'
-            ? 'label'
-            : 'food',
-      );
-      setScanResult(null);
-      setResultModalVisible(false);
-      isBarcodeLockedRef.current = false;
-      lastScannedBarcodeRef.current = null;
-      return () => {
-        scanGeneration.current++;
-        request.current?.abort();
-      };
-    }, [params.mode]),
-  );
-  const chooseMode = (mode: 'food' | 'barcode' | 'label') => {
-    request.current?.abort();
-    scanGeneration.current++;
-    setIsScanning(false);
+  useFocusEffect(useCallback(() => {
+    scanSession.cancel();
+    setPhase(null);
+    setCameraReady(false);
+    setScanMode(params.mode === 'barcode' ? 'barcode' : params.mode === 'label' ? 'label' : 'food');
     setScanResult(null);
-    setScanMode(mode);
-    isBarcodeLockedRef.current = false;
+    setResultModalVisible(false);
+    setSelectedImage('');
+    setScanError('');
+    setNeedsSignIn(false);
+    setCanRetry(false);
+    lastPhoto.current = null;
+    preparedPhoto.current = null;
+    lastScannedBarcodeRef.current = null;
+    return () => { scanSession.cancel(); };
+  }, [params.mode, scanSession]));
+
+  const currentTask = (task: AbortController, owner: string | null) =>
+    scanSession.isCurrent(task) && focused.current && accountOwner === owner;
+  const cancelAnalysis = () => {
+    scanSession.cancel();
+    setPhase(null);
+    setScanError('Analysis cancelled. Retake the photo or enter nutrition manually.');
+    setNeedsSignIn(false);
+  };
+  const resetPhoto = () => {
+    scanSession.cancel();
+    setPhase(null);
+    setScanResult(null);
+    setResultModalVisible(false);
+    setSelectedImage('');
+    setScanError('');
+    setNeedsSignIn(false);
+    setCanRetry(false);
+    lastPhoto.current = null;
+    preparedPhoto.current = null;
     lastScannedBarcodeRef.current = null;
   };
-
-  const processImage = async (
-    imageUri: string,
-    base64?: string,
-    mimeType?: string,
-  ) => {
-    const generation = ++scanGeneration.current;
-    request.current?.abort();
-    const controller = new AbortController();
-    request.current = controller;
-    setSelectedImage(imageUri);
-    setIsScanning(true);
-
+  const chooseMode = (mode: 'food' | 'barcode' | 'label') => {
+    resetPhoto();
+    setScanMode(mode);
+  };
+  const enterManually = () => {
+    scanSession.cancel();
+    setPhase(null);
+    setScanResult(null);
+    setResultSource('manual');
+    draftOwner.current = accountOwner;
+    setResultModalVisible(true);
+  };
+  const showFailure = (error: unknown) => {
+    setNeedsSignIn(error instanceof NutritionRequestError && error.code === 'session');
+    setScanError(error instanceof Error ? error.message : 'Unable to analyze this photo. Try another photo or enter nutrition manually.');
+  };
+  const processPhoto = async (acquire: (signal: AbortSignal) => Promise<MealPhotoInput | null>, retry = false) => {
+    if (!isFocused || resultModalVisible) return;
+    if (!accountOwner) {
+      setNeedsSignIn(true);
+      setScanError('Sign in to estimate a meal from a photo. Manual meal entry is also available.');
+      return;
+    }
+    const task = scanSession.begin();
+    if (!task) return;
+    const owner = accountOwner;
+    const mode = scanMode;
+    setPhase('capture');
+    setScanError('');
+    setNeedsSignIn(false);
     try {
-      let result: AiFoodDetectionResult;
-      if (scanMode === 'label' || scanMode === 'barcode') {
-        result = await analyzeNutritionLabelImage(
-          imageUri,
-          base64,
-          mimeType,
-          controller.signal,
-        );
-      } else {
-        result = await analyzeFoodImage(
-          imageUri,
-          base64,
-          mimeType,
-          controller.signal,
-        );
-      }
-      if (controller.signal.aborted || generation !== scanGeneration.current)
-        return;
+      const photo = await acquire(task.signal);
+      if (!photo || !currentTask(task, owner)) return;
+      lastPhoto.current = photo;
+      setCanRetry(true);
+      setSelectedImage(photo.uri);
+      setPhase('preparing');
+      if (!retry) preparedPhoto.current = null;
+      const prepared = preparedPhoto.current ?? await prepareMealPhoto(photo, task.signal, mode === 'food' ? 1280 : 1600);
+      if (!currentTask(task, owner)) return;
+      preparedPhoto.current = prepared;
+      setSelectedImage(prepared.uri);
+      setPhase('analyzing');
+      const analyze = mode === 'food' ? analyzeFoodImage : analyzeNutritionLabelImage;
+      const result = await analyze(prepared.uri, prepared.base64, prepared.mimeType, task.signal, owner);
+      if (!currentTask(task, owner)) return;
       triggerSuccessFeedback();
-      setResultSource(scanMode === 'food' ? 'photo' : 'label');
+      draftOwner.current = owner;
+      setResultSource(mode === 'food' ? 'photo' : 'label');
       setScanResult(result);
       setResultModalVisible(true);
-    } catch (err) {
-      console.error('Scan error:', err);
-      if (!controller.signal.aborted)
-        Alert.alert(
-          'Scan failed',
-          err instanceof Error ? err.message : 'Please try again.',
-        );
+    } catch (error) {
+      if (currentTask(task, owner)) showFailure(error);
     } finally {
-      if (generation === scanGeneration.current) setIsScanning(false);
+      if (scanSession.isCurrent(task)) {
+        scanSession.finish(task);
+        setPhase(null);
+      }
     }
   };
-
-  const handleBarcodeScanned = async (event: {
-    data: string;
-    type: string;
-  }) => {
+  const handleCapture = () => {
+    if (scanMode === 'barcode') return;
+    void processPhoto(async (signal) => {
+      triggerLightImpact();
+      if (cameraRef.current && permission?.granted) {
+        if (!cameraReady) throw new Error('The camera is still getting ready. Try again in a moment.');
+        return await cameraRef.current.takePictureAsync({ quality: 0.85 });
+      }
+      if (Platform.OS === 'web') throw new Error('Allow camera access, or choose a meal photo from your library.');
+      const cameraPermission = await ImagePicker.requestCameraPermissionsAsync();
+      if (signal.aborted) return null;
+      if (!cameraPermission.granted) throw new Error('Allow camera access in device settings, or choose a meal photo from your library.');
+      const picture = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.85 });
+      return picture.canceled ? null : picture.assets[0];
+    });
+  };
+  const handlePickGallery = () => {
+    void processPhoto(async () => {
+      // The system photo picker grants access to the selected image; no broad library permission is needed.
+      const picture = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.85 });
+      return picture.canceled ? null : picture.assets[0];
+    });
+  };
+  const handleBarcodeScanned = async (event: { data: string; type: string }) => {
     const rawCode = event?.data;
-    if (
-      !rawCode ||
-      !isFocused ||
-      resultModalVisible ||
-      isScanning ||
-      isBarcodeLockedRef.current
-    )
-      return;
-    if (lastScannedBarcodeRef.current === rawCode) return;
-
+    if (!rawCode || !isFocused || resultModalVisible || lastScannedBarcodeRef.current === rawCode) return;
+    const task = scanSession.begin();
+    if (!task) return;
+    const owner = accountOwner;
     lastScannedBarcodeRef.current = rawCode;
-    isBarcodeLockedRef.current = true;
-    setIsScanning(true);
-
-    triggerSuccessFeedback();
-
+    setScanError('');
+    setNeedsSignIn(false);
+    setPhase('lookup');
     try {
       setSelectedImage('');
-      const controller = new AbortController();
-      request.current = controller;
-      const product = await fetchProductByBarcode(rawCode, controller.signal);
-      if (controller.signal.aborted) return;
-      if (product) {
-        setResultSource('barcode');
-        setScanResult(product);
-        setResultModalVisible(true);
-      } else {
-        Alert.alert(
-          'Barcode Not Found',
-          `Could not find product for barcode ${rawCode}. You can try scanning the Nutrition Facts label.`,
-        );
-      }
-    } catch (err) {
-      console.warn('Barcode scan error:', err);
-      Alert.alert(
-        'Barcode Lookup Error',
-        'Could not fetch barcode information. Please try again.',
-      );
+      const product = await fetchProductByBarcode(rawCode, task.signal);
+      if (!currentTask(task, owner)) return;
+      if (!product) throw new Error('This barcode was not found. Try the nutrition label or enter the values manually.');
+      draftOwner.current = owner;
+      setResultSource('barcode');
+      setScanResult(product);
+      setResultModalVisible(true);
+      triggerSuccessFeedback();
+    } catch (error) {
+      if (currentTask(task, owner)) showFailure(error);
     } finally {
-      setIsScanning(false);
-    }
-  };
-
-  const handleCapture = async () => {
-    if (scanMode === 'barcode' || isScanning || resultModalVisible) return;
-    // If live camera view is active and granted
-    if (cameraRef.current && permission?.granted) {
-      try {
-        triggerLightImpact();
-        setIsScanning(true);
-        const photo = await cameraRef.current.takePictureAsync({
-          base64: true,
-          quality: 0.7, // Optimized quality for 3x faster AI network payload
-        });
-
-        if (photo?.uri) {
-          await processImage(photo.uri, photo.base64);
-        }
-      } catch (err) {
-        console.warn('Camera takePicture error:', err);
-        Alert.alert(
-          'Camera Error',
-          'Could not capture photo. Please try again.',
-        );
-      } finally {
-        setIsScanning(false);
+      if (scanSession.isCurrent(task)) {
+        scanSession.finish(task);
+        setPhase(null);
       }
-      return;
-    }
-
-    // Explicitly request camera permission first
-    const camPerm = await ImagePicker.requestCameraPermissionsAsync();
-    if (!camPerm.granted) {
-      // If camera view permission not yet requested
-      if (!permission?.granted) {
-        const p = await requestPermission();
-        if (!p.granted) {
-          Alert.alert(
-            'Camera Permission Required',
-            'Please allow camera access in device settings to scan your food live.',
-          );
-          return;
-        }
-      } else {
-        Alert.alert(
-          'Camera Permission Required',
-          'Please allow camera access in device settings to scan your food live.',
-        );
-        return;
-      }
-    }
-
-    try {
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ['images'],
-        allowsEditing: true,
-        quality: 0.85,
-        base64: true,
-      });
-
-      if (!result.canceled && result.assets?.[0]) {
-        await processImage(
-          result.assets[0].uri,
-          result.assets[0].base64 || undefined,
-          result.assets[0].mimeType,
-        );
-      }
-    } catch (e) {
-      console.warn('Camera launch error:', e);
-    }
-  };
-
-  const handlePickGallery = async () => {
-    try {
-      const { status } =
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert(
-          'Photo Library Access Required',
-          'Please allow photo library access in your device settings to select food images.',
-        );
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.85,
-        base64: true,
-      });
-
-      if (!result.canceled && result.assets?.[0]) {
-        await processImage(
-          result.assets[0].uri,
-          result.assets[0].base64 || undefined,
-          result.assets[0].mimeType,
-        );
-      }
-    } catch (e) {
-      console.warn('Gallery pick error:', e);
     }
   };
 
   const toggleCameraFacing = () => {
     triggerSelection();
+    setCameraReady(false);
     setFacing((current) => (current === 'back' ? 'front' : 'back'));
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView edges={['top']} style={styles.safeArea}>
+      <ScrollView contentContainerStyle={styles.scannerBody}>
       {/* Top Header Bar */}
       <View style={styles.topBar}>
         <TouchableOpacity
@@ -346,7 +268,7 @@ export default function ScanScreen() {
               ? 'Barcode Scanner'
               : scanMode === 'label'
                 ? 'Nutrition label'
-                : 'Food scanner'}
+                : 'Photo to meal'}
           </Text>
         </View>
 
@@ -354,17 +276,27 @@ export default function ScanScreen() {
           accessibilityRole="button"
           accessibilityLabel="Switch camera"
           style={styles.topBtn}
+          disabled={isScanning}
           onPress={toggleCameraFacing}
         >
           <SwitchCamera size={18} color={PALETTE[50]} />
         </TouchableOpacity>
       </View>
 
+      <Text style={styles.guidance}>
+        {scanMode === 'food'
+          ? 'Take a clear meal photo. AI fills the portion and nutrition for you to review.'
+          : scanMode === 'label'
+            ? 'Photograph the full nutrition label. Review the recognized serving and values.'
+            : 'Scan the product barcode, then review its serving and nutrition.'}
+      </Text>
       {/* Main Viewfinder Frame */}
       <View style={styles.viewfinderContainer}>
         {permission?.granted && isFocused ? (
           <CameraView
             ref={cameraRef}
+            onCameraReady={() => setCameraReady(true)}
+            onMountError={() => showFailure(new Error('The camera could not open. Choose a photo from your library or enter nutrition manually.'))}
             style={StyleSheet.absoluteFill}
             facing={facing}
             active={isFocused && !resultModalVisible}
@@ -430,7 +362,7 @@ export default function ScanScreen() {
         {/* Scan Mode Overlays & Reticles */}
         {scanMode === 'food' && (
           <View style={[styles.aiPin, styles.pinLettuce]}>
-            <Text style={styles.pinText}>Food photo</Text>
+            <Text style={styles.pinText}>AI photo estimate</Text>
             <View style={styles.pinDot} />
           </View>
         )}
@@ -594,6 +526,8 @@ export default function ScanScreen() {
           <View style={styles.shutterRow}>
             <TouchableOpacity
               accessibilityRole="button"
+              accessibilityLabel={torch ? 'Turn torch off' : 'Turn torch on'}
+              disabled={isScanning}
               style={[
                 styles.shutterSideBtn,
                 torch && styles.shutterSideBtnActive,
@@ -611,7 +545,7 @@ export default function ScanScreen() {
               accessibilityLabel="Take meal photo"
               style={styles.shutterOuter}
               onPress={handleCapture}
-              disabled={scanMode === 'barcode' || isScanning}
+              disabled={scanMode === 'barcode' || isScanning || (permission?.granted && !cameraReady)}
               activeOpacity={0.85}
             >
               <View style={styles.shutterInner}>
@@ -623,7 +557,8 @@ export default function ScanScreen() {
 
             <TouchableOpacity
               accessibilityRole="button"
-              accessibilityLabel="Choose photo from library"
+              accessibilityLabel="Choose meal photo for AI analysis"
+              disabled={isScanning || resultModalVisible}
               style={styles.shutterSideBtn}
               onPress={() => {
                 triggerLightImpact();
@@ -634,29 +569,76 @@ export default function ScanScreen() {
             </TouchableOpacity>
           </View>
         </View>
+        {(isScanning || scanError) && (
+          <View style={styles.analysisOverlay}>
+            {selectedImage ? <Image source={{ uri: selectedImage }} style={StyleSheet.absoluteFill} contentFit="cover" /> : null}
+            <ScrollView contentContainerStyle={styles.statusBody}>
+              <View style={styles.statusCard}>
+                {isScanning ? (
+                  <>
+                    <ActivityIndicator size="large" color={JOURNAL.accent} accessibilityLabel="Analyzing meal photo" />
+                    <Text accessibilityRole="header" style={styles.statusTitle}>
+                      {phase === 'capture' ? 'Getting your photo…' : phase === 'preparing' ? 'Preparing your photo…' : phase === 'lookup' ? 'Looking up this barcode…' : 'Estimating your meal…'}
+                    </Text>
+                    <Text accessibilityLiveRegion="polite" style={styles.statusText}>
+                      {phase === 'lookup' ? 'Checking product nutrition.' : 'Your portion, calories, protein, carbs and fat will appear in Add Meal for review.'}
+                    </Text>
+                    <TouchableOpacity accessibilityRole="button" style={styles.statusButton} onPress={cancelAnalysis}>
+                      <Text style={styles.statusButtonText}>Cancel analysis</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <>
+                    <Text accessibilityRole="header" style={styles.statusTitle}>{needsSignIn ? 'Sign in for AI photos' : 'Photo needs another look'}</Text>
+                    <Text accessibilityRole="alert" style={styles.statusText}>{scanError}</Text>
+                    {needsSignIn ? (
+                      <TouchableOpacity accessibilityRole="button" style={styles.statusButton} onPress={() => setAuthVisible(true)}>
+                        <Text style={styles.statusButtonText}>Sign in</Text>
+                      </TouchableOpacity>
+                    ) : canRetry ? (
+                      <TouchableOpacity accessibilityRole="button" style={styles.statusButton} onPress={() => void processPhoto(async () => lastPhoto.current, true)}>
+                        <Text style={styles.statusButtonText}>Try analysis again</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                    <TouchableOpacity accessibilityRole="button" style={styles.statusButton} onPress={resetPhoto}>
+                      <Text style={styles.statusButtonText}>Retake or choose another photo</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity accessibilityRole="button" style={styles.statusButton} onPress={enterManually}>
+                      <Text style={styles.statusButtonText}>Enter nutrition manually</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+              </View>
+            </ScrollView>
+          </View>
+        )}
       </View>
-
+      </ScrollView>
+      <AuthModal visible={isFocused && authVisible} onClose={() => setAuthVisible(false)} />
       {/* Result & Breakdown Modal */}
       <MealResultModal
-        visible={resultModalVisible}
+        visible={isFocused && resultModalVisible}
         onClose={() => {
           setResultModalVisible(false);
           setScanResult(null);
-          isBarcodeLockedRef.current = false;
-          lastScannedBarcodeRef.current = null;
+          resetPhoto();
         }}
         result={scanResult}
         nutritionSource={resultSource}
+        title={resultSource === 'photo' || resultSource === 'manual' ? 'Add a meal' : undefined}
         defaultMealType={mealType}
         sourceLabel={
           resultSource === 'barcode'
             ? 'Barcode values · review the portion'
             : resultSource === 'label'
               ? 'Label reading · review the recognized values'
-              : 'Photo estimate · review and adjust the values'
+              : resultSource === 'manual'
+                ? selectedImage ? 'Enter the values manually. The photo is attached for reference.' : 'Enter the values manually.'
+                : 'Filled from your photo · estimated nutrition for the pictured portion. Check the portion and hidden ingredients before saving.'
         }
         imageUri={selectedImage}
         onConfirm={async (item) => {
+          if (!focused.current || draftOwner.current !== accountOwner) throw new Error('Your account or screen changed. Please scan the meal again.');
           await logMeal({
             name: item.name,
             calories: item.calories,
@@ -666,7 +648,8 @@ export default function ScanScreen() {
             mealType: item.mealType,
             portionSize: item.portionSize,
             imageUri: item.imageUri,
-            isAiGenerated: resultSource !== 'barcode',
+            isAiGenerated: resultSource === 'photo' || resultSource === 'label',
+            date: getTodayDateString(),
             source: resultSource,
             ingredients: item.ingredients,
           });
@@ -681,8 +664,17 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: PALETTE[950],
-    paddingTop: Platform.OS === 'android' ? 36 : 0,
+
   },
+  scannerBody: { flexGrow: 1 },
+  guidance: { fontFamily: FONTS.sans, fontSize: 13, lineHeight: 20, color: PALETTE[200], paddingHorizontal: 20, marginBottom: 12 },
+  analysisOverlay: { ...StyleSheet.absoluteFill, backgroundColor: JOURNAL.ink },
+  statusBody: { flexGrow: 1, justifyContent: 'center', padding: 20 },
+  statusCard: { padding: 20, borderRadius: 20, backgroundColor: JOURNAL.paper, gap: 12 },
+  statusTitle: { fontFamily: FONTS.bold, fontSize: 20, lineHeight: 28, color: JOURNAL.ink },
+  statusText: { fontFamily: FONTS.sans, fontSize: 14, lineHeight: 22, color: JOURNAL.muted },
+  statusButton: { minHeight: 48, justifyContent: 'center', alignItems: 'center', padding: 12, backgroundColor: JOURNAL.selected, borderRadius: 12 },
+  statusButtonText: { fontFamily: FONTS.semibold, fontSize: 14, lineHeight: 22, color: JOURNAL.accentText, textAlign: 'center' },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -692,9 +684,9 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   topBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: 'rgba(218, 237, 235, 0.15)',
     alignItems: 'center',
     justifyContent: 'center',
@@ -722,6 +714,7 @@ const styles = StyleSheet.create({
   },
   viewfinderContainer: {
     flex: 1,
+    minHeight: 460,
     borderRadius: 22,
     overflow: 'hidden',
     position: 'relative',
@@ -853,6 +846,8 @@ const styles = StyleSheet.create({
     gap: 6,
     backgroundColor: 'rgba(218, 237, 235, 0.12)',
     paddingHorizontal: 12,
+    minHeight: 48,
+    justifyContent: 'center',
     paddingVertical: 6,
     borderRadius: 12,
   },
@@ -876,9 +871,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   shutterSideBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: 'rgba(218, 237, 235, 0.15)',
     alignItems: 'center',
     justifyContent: 'center',

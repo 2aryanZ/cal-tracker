@@ -234,10 +234,10 @@ async function imageData(uri:string,base64?:string,mimeType?:string):Promise<{ba
   const value=await new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onerror=()=>reject(new Error('Unable to read this image.'));reader.onload=()=>resolve(String(reader.result));reader.readAsDataURL(blob);});
   return imageData(value);
 }
-async function analyze(kind:'food'|'label',uri:string,base64?:string,mimeType?:string,signal?:AbortSignal):Promise<AiFoodDetectionResult> {
+async function analyze(kind:'food'|'label',uri:string,base64?:string,mimeType?:string,signal?:AbortSignal,expectedOwner?:string):Promise<AiFoodDetectionResult> {
   const image=await imageData(uri,base64,mimeType);
   if(!['image/jpeg','image/png','image/webp'].includes(image.mimeType))throw new Error('Use a JPEG, PNG, or WebP image.');
-  return validateDetection(await requestNutrition({kind,...image},signal));
+  return validateDetection(await requestNutrition({kind,...image},signal,expectedOwner));
 }
-export function analyzeFoodImage(uri:string,base64?:string,mimeType?:string,signal?:AbortSignal):Promise<AiFoodDetectionResult> { return analyze('food',uri,base64,mimeType,signal); }
-export function analyzeNutritionLabelImage(uri:string,base64?:string,mimeType?:string,signal?:AbortSignal):Promise<AiFoodDetectionResult> { return analyze('label',uri,base64,mimeType,signal); }
+export function analyzeFoodImage(uri:string,base64?:string,mimeType?:string,signal?:AbortSignal,expectedOwner?:string):Promise<AiFoodDetectionResult> { return analyze('food',uri,base64,mimeType,signal,expectedOwner); }
+export function analyzeNutritionLabelImage(uri:string,base64?:string,mimeType?:string,signal?:AbortSignal,expectedOwner?:string):Promise<AiFoodDetectionResult> { return analyze('label',uri,base64,mimeType,signal,expectedOwner); }

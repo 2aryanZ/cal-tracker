@@ -260,3 +260,26 @@ test('provider failures retain meal-specific fallback and do not automatically r
     assert.equal(calls.length, 3);
   }
 });
+
+test('photo analysis sends the image with a whole-portion prompt and returns every editable nutrition field', async () => {
+  const expected = { foodName: 'Banana', servingSize: '1 medium banana, about 118 g', calories: 105, protein: 1.3, carbs: 27, fats: 0.3, confidence: 0.7, breakdown: [{ item: 'Banana', portion: '118 g edible portion', calories: 105 }] };
+  const { handler, calls } = endpoint(expected);
+  const response = await handler(request({ kind: 'food', base64: 'abcd', mimeType: 'image/jpeg' }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), expected);
+  const provider = JSON.parse(calls.at(-1).options.body);
+  const parts = provider.contents[0].parts;
+  assert.equal(parts[1].inlineData.mimeType, 'image/jpeg');
+  assert.equal(parts[1].inlineData.data, 'abcd');
+  assert.match(parts[0].text, /whole pictured portion/);
+  assert.match(parts[0].text, /hidden ingredients are uncertain/);
+});
+test('a nonfood photo response remains an error and cannot fabricate a meal', async () => {
+  const { handler } = endpoint({ error: 'No edible food is visible. Choose a meal photo.' });
+  const response = await handler(request({ kind: 'food', base64: 'abcd', mimeType: 'image/jpeg' }));
+  const body = await response.json();
+  assert.equal(body.error, 'No edible food is visible. Choose a meal photo.');
+  assert.equal(body.calories, undefined);
+  const { validateDetection } = load('src/services/nutritionApi.ts', { './supabase': { supabase: {} } });
+  assert.throws(() => validateDetection(body));
+});

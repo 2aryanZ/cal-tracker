@@ -38,7 +38,7 @@ Live authenticated Gemini meal generation was verified on October 7, 2026:
 - After a full browser reload, the same four meals returned under **SAVED AI IDEAS · FROM TODAY**, without pressing Refresh.
 - Switching to everyday ideas displayed local recipes immediately; closing and reopening restored the saved AI plan. The journal remained empty throughout verification; no test meal was logged.
 
-This verifies the authenticated web flow for the balanced preference. Other dietary preferences and photo, label and text analysis still require their own live checks. Use a model supported by the Google project; never place a Gemini key in client environment variables or Git.
+This verifies the authenticated web flow for the balanced preference. Other dietary preferences, label and text analysis still require their own live checks. Photo analysis was subsequently verified; see [Photo to Meal](PHOTO-MEAL-ANALYSIS.md). Use a model supported by the Google project; never place a Gemini key in client environment variables or Git.
 
 Native phone layout, maximum system font size and cold-launch branding must be checked on the next installed build. The existing released v1.1.5 binary is unchanged. Profile now reads its version from Expo configuration instead of a hard-coded older version.
 

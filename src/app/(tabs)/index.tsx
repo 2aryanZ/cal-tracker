@@ -202,6 +202,7 @@ export default function TodayScreen() {
           <TouchableOpacity
             accessibilityRole="button"
             accessibilityLabel="Take a food photo"
+            accessibilityHint="AI estimates the pictured portion and fills the Add Meal form for review."
             style={[tempo.secondary, { width: 52, paddingHorizontal: 0 }]}
             onPress={() =>
               router.push({
