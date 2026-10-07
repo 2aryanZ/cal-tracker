@@ -34,4 +34,4 @@ The previous client handled only an `error` field from failed responses. This ga
 
 ## Selected solution
 
-The owner selected option 3: local ideas immediately, optional AI personalization, and account-separated caching. The implementation retains current suggestions when AI fails, uses meal-specific feedback, labels estimates, and logs only an individually confirmed eaten meal. The missing Edge Function has been deployed with JWT verification enabled; live generation still needs server-secret confirmation and an authenticated test.
+The owner selected option 3: local ideas immediately, optional AI personalization, and account-separated caching. The implementation retains current suggestions when AI fails, uses meal-specific feedback, labels estimates, and logs only an individually confirmed eaten meal. The missing Edge Function has been deployed with JWT verification enabled. Server-secret names, live authenticated balanced-plan generation, and saved-plan restoration after a browser reload were verified on October 7, 2026; see [Hybrid Meal Ideas](HYBRID-MEAL-IDEAS.md) for evidence and remaining checks.
