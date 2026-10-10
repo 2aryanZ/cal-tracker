@@ -206,12 +206,29 @@ export async function recordBadges(badges: MilestoneBadge[]): Promise<Record<str
 export async function markCelebrated(date: string): Promise<boolean> { return mutate((s, o) => { if (s.celebratedDates.includes(date))
     return false; s.celebratedDates.push(date); preferences(s, o); return true; }); }
 export async function getPendingChanges(): Promise<PendingChange[]> { return (await getSnapshot()).outbox; }
+export interface ChangeReceipt { changeId: string; entity: SyncEntity; key: string; version: number }
+export async function acknowledgeChanges(owner: string, receipts: ChangeReceipt[]): Promise<void> {
+    if (!receipts.length) return;
+    return serial(async () => {
+        const s = draft(await read(owner));
+        const byId = new Map(s.outbox.map(change => [change.id, change]));
+        const byKey = new Map(s.outbox.map(change => [`${change.entity}:${change.key}`, change]));
+        const acknowledged = new Set<string>();
+        for (const receipt of receipts) {
+            const key = `${receipt.entity}:${receipt.key}`;
+            s.versions[key] = receipt.version;
+            acknowledged.add(receipt.changeId);
+            if (!byId.has(receipt.changeId)) {
+                const successor = byKey.get(key);
+                if (successor) successor.expectedVersion = receipt.version;
+            }
+        }
+        s.outbox = s.outbox.filter(change => !acknowledged.has(change.id));
+        await commit(owner, s);
+    });
+}
 export async function acknowledgeChange(owner: string, changeId: string, entity: SyncEntity, key: string, version: number): Promise<void> {
-    return serial(async () => { const s = draft(await read(owner)); s.versions[`${entity}:${key}`] = version; const sent = s.outbox.find(c => c.id === changeId); s.outbox = s.outbox.filter(c => c.id !== changeId); if (!sent) {
-        const successor = s.outbox.find(c => c.entity === entity && c.key === key);
-        if (successor)
-            successor.expectedVersion = version;
-    } await commit(owner, s); });
+    return acknowledgeChanges(owner, [{ changeId, entity, key, version }]);
 }
 export async function applyCloudSnapshot(owner: string, cloud: Partial<LocalSnapshot>, versions: Record<string, number>, cursor?: string): Promise<void> {
     return serial(async () => {

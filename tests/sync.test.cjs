@@ -1,7 +1,7 @@
 const test=require('node:test');const assert=require('node:assert/strict');const {load,memoryStorage}=require('./helpers.cjs');
-function subject({rows={},failure=null,delta=null,rpc=async()=>({data:1,error:null})}={}){
+function subject({rows={},failure=null,delta=null,batch=null,rpc=async()=>({data:1,error:null})}={}){
  const disk=memoryStorage(),cache={},calls=[],session={user:{id:'alice'},access_token:'alice-token'};
- const client={auth:{getSession:async()=>({data:{session},error:null})},rpc:async(name,params)=>{calls.push({name,params});return name==='fetch_tracker_delta'?(delta?delta(params):{data:null,error:{code:'PGRST202',message:'function not deployed'}}):rpc(name,params);},from(table){const query={select(){return this;},eq(){return this;},order(){return this;},async range(start,end){calls.push({table,start,end});return {data:(rows[table]??[]).slice(start,end+1),error:failure&&table===failure?{message:'read denied'}:null};}};return query;}};
+ const client={auth:{getSession:async()=>({data:{session},error:null})},rpc:async(name,params)=>{calls.push({name,params});if(name==='apply_tracker_changes')return batch?batch(params.p_changes):{data:null,error:{code:'PGRST202',message:'function not deployed'}};return name==='fetch_tracker_delta'?(delta?delta(params):{data:null,error:{code:'PGRST202',message:'function not deployed'}}):rpc(name,params);},from(table){const query={select(){return this;},eq(){return this;},order(){return this;},async range(start,end){calls.push({table,start,end});return {data:(rows[table]??[]).slice(start,end+1),error:failure&&table===failure?{message:'read denied'}:null};}};return query;}};
  const mocks={'./authCrypto':{},'react-native-url-polyfill/auto':{},'react-native':{Platform:{OS:'ios'}},'@react-native-async-storage/async-storage':disk,'@supabase/supabase-js':{createClient:(url,key,options)=>{if(options.global)calls.push({authorization:options.global.headers.Authorization});return client;}},'expo-web-browser':{maybeCompleteAuthSession(){}},'expo-linking':{createURL:()=> 'caltracker://'}};
  return {api:load('src/services/supabase.ts',mocks,cache),storage:load('src/services/storage.ts',mocks,cache),client,calls,session,disk};
 }
@@ -21,4 +21,26 @@ test('normal polling uses one delta RPC, preserves history, applies remote delet
  const {api,storage,calls,disk}=subject({delta:async params=>({error:null,data:{until:revision,records:rows.filter(row=>BigInt(row.sync_revision)>BigInt(params.p_after)),next:null}})});
  await storage.setStorageScope('alice');await api.syncAccount();assert.equal((await storage.getFoodEntries()).length,1);let writes=0;const set=disk.setItem;disk.setItem=async(...args)=>{writes++;return set(...args);};await api.syncAccount();assert.equal(writes,0);assert.equal((await storage.getFoodEntries()).length,1);
  revision='2';rows=[{entity:'food',record_key:'remote',payload:null,deleted:true,version:2,sync_revision:2}];await api.syncAccount();assert.equal((await storage.getFoodEntries()).length,0);assert.equal((await storage.getSnapshot()).syncCursor,'2');assert.equal(calls.filter(c=>c.table).length,0);assert.equal(calls.filter(c=>c.name==='fetch_tracker_delta').length,3);
+});
+const receipt=change=>({changeId:change.id,entity:change.entity,key:change.key,version:String(change.expectedVersion+1)});
+test('75 pending meals use three transactional RPCs and three durable acknowledgement writes',async()=>{
+ let revision=0;const remote=new Map();
+ const {api,storage,calls,disk}=subject({batch:async changes=>{for(const c of changes)remote.set(c.key,{entity:c.entity,record_key:c.key,payload:c.payload,deleted:c.action==='delete',version:c.expectedVersion+1,sync_revision:++revision});return {error:null,data:changes.map(receipt)};},delta:async p=>({error:null,data:{until:String(revision),records:[...remote.values()].filter(r=>r.sync_revision>Number(p.p_after)),next:null}})});
+ await storage.setStorageScope('alice');await storage.saveFoodEntriesBatch(Array.from({length:75},(_,i)=>meal('batch-'+i)));let writes=0;const set=disk.setItem;disk.setItem=async(...args)=>{writes++;return set(...args);};await api.syncAccount();assert.equal(calls.filter(c=>c.name==='apply_tracker_changes').length,3);assert.equal(calls.filter(c=>c.name==='apply_tracker_change').length,0);assert.equal(writes,4); // 3 receipts + initial cloud/cursor commit
+ assert.equal((await storage.getPendingChanges()).length,0);assert.equal((await storage.getFoodEntries()).length,75);
+});
+test('a rejected batch keeps all changes; malformed or duplicate receipts acknowledge none',async()=>{
+ for(const batch of [async()=>({data:null,error:{message:'sync conflict'}}),async changes=>({error:null,data:[receipt(changes[0]),receipt(changes[0])]})]) {
+  const {api,storage}=subject({batch});await storage.setStorageScope('alice');await storage.saveFoodEntriesBatch([meal('one'),meal('two')]);await assert.rejects(api.syncAccount());assert.equal((await storage.getPendingChanges()).length,2);assert.equal((await storage.getFoodEntries()).length,2);
+ }
+});
+test('an edit during a batch upload keeps its new payload and receives the acknowledged version',async()=>{
+ let edit;const {api,storage}=subject({batch:async changes=>{await edit();return {error:null,data:changes.map(receipt)};},delta:async()=>({error:null,data:{until:'1',records:[{entity:'food',record_key:'edited',payload:meal('edited'),deleted:false,version:1,sync_revision:1}],next:null}})});
+ await storage.setStorageScope('alice');await storage.saveFoodEntry(meal('edited'));edit=()=>storage.updateFoodEntry({...meal('edited'),calories:200});await api.syncAccount();const pending=(await storage.getPendingChanges())[0];assert.equal(pending.expectedVersion,1);assert.equal(pending.payload.calories,200);assert.equal((await storage.getFoodEntries())[0].calories,200);
+});
+test('receipts must match the exact expected revision and cannot coerce booleans into success',()=>{
+ const {api}=subject();const change={id:'change',entity:'food',key:'meal',expectedVersion:0};for(const version of [true,2,0,'NaN',null])assert.throws(()=>api.validateBatchReceipts([change],[{changeId:'change',entity:'food',key:'meal',version}]),/acknowledgement was invalid/);assert.equal(api.validateBatchReceipts([change],[{changeId:'change',entity:'food',key:'meal',version:'1'}])[0].version,1);
+});
+test('initial delta overlay retains known history when a concurrent edit moves a row beyond the paging boundary',async()=>{
+ let newer=false;const {api,storage}=subject({delta:async()=>({error:null,data:{until:newer?'2':'1',records:newer?[{entity:'food',record_key:'known',payload:{...meal('known'),calories:200},deleted:false,version:2,sync_revision:2}]:[],next:null}})});await storage.setStorageScope('alice');await storage.applyCloudSnapshot('alice',{entries:[meal('known')]},{'food:known':1});await api.syncAccount();assert.equal((await storage.getFoodEntries())[0].id,'known');newer=true;await api.syncAccount();assert.equal((await storage.getFoodEntries())[0].calories,200);
 });

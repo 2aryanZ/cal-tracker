@@ -100,7 +100,7 @@ function AccountScanner({ accountOwner }: { accountOwner: string | null }) {
     lastPhoto.current = null;
     preparedPhoto.current = null;
     lastScannedBarcodeRef.current = null;
-    return () => { scanSession.cancel(); };
+    return () => { scanSession.cancel(); lastPhoto.current = null; preparedPhoto.current = null; };
   }, [params.mode, scanSession]));
 
   const currentTask = (task: AbortController, owner: string | null) =>
@@ -170,6 +170,9 @@ function AccountScanner({ accountOwner }: { accountOwner: string | null }) {
       const analyze = mode === 'food' ? analyzeFoodImage : analyzeNutritionLabelImage;
       const result = await analyze(prepared.uri, prepared.base64, prepared.mimeType, task.signal, owner);
       if (!currentTask(task, owner)) return;
+      preparedPhoto.current = null;
+      lastPhoto.current = null;
+      setCanRetry(false);
       triggerSuccessFeedback();
       draftOwner.current = owner;
       setResultSource(mode === 'food' ? 'photo' : 'label');

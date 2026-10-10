@@ -9,7 +9,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import { UserAccount, FoodEntry } from '@/types/nutrition';
-import { getStorageScope, getSnapshot, applyCloudDelta, refreshResolvedPhotos, getPendingChanges, resolvePendingChange, acknowledgeChange, applyCloudSnapshot, type LocalSnapshot, type PendingChange } from './storage';
+import { getStorageScope, getSnapshot, applyCloudDelta, refreshResolvedPhotos, getPendingChanges, resolvePendingChange, acknowledgeChange, acknowledgeChanges, applyCloudSnapshot, type LocalSnapshot, type PendingChange, type ChangeReceipt } from './storage';
 if (Platform.OS !== 'web' || typeof window !== 'undefined')
     WebBrowser.maybeCompleteAuthSession();
 const serverRendering = Platform.OS === 'web' && typeof window === 'undefined';
@@ -211,12 +211,12 @@ export async function supabaseFetchAllUserData() {
         const delta = await readDelta(context.client);
         const records = await hydrateRecords(delta.records, context.client, context.owner);
         const { snapshot, versions } = overlayCloudRecords({ entries: [], weights: [], waterLogs: {} }, records);
-        return { owner: context.owner, snapshot, versions, cursor: delta.cursor };
+        return { owner: context.owner, snapshot, versions, cursor: delta.cursor, records };
     } catch (error) {
         // Retain compatibility with projects that have not deployed the new migration.
         if (!missingDeltaFunction(error)) throw error;
         const legacy = await fetchLegacyUserData();
-        return legacy ? { ...legacy, cursor: undefined } : null;
+        return legacy ? { ...legacy, cursor: undefined, records: undefined } : null;
     }
 }
 let syncing: Promise<void> | null = null;
@@ -239,22 +239,44 @@ export async function syncAccount(): Promise<void> {
         const context = await accountClient();
         if (!context || context.owner !== owner)
             throw new Error('The account changed.');
-        for (const change of await getPendingChanges()) {
+        const pending = await getPendingChanges();
+        for (let start = 0; start < pending.length; start += 25) {
+            const batch = pending.slice(start, start + 25);
+            const prepared: PendingChange[] = [];
+            // Read/upload one image at a time to bound peak upload memory.
+            for (const change of batch) {
+                if (getStorageScope() !== owner || await getSupabaseUserId() !== owner)
+                    throw new Error('The account changed during sync. Pending changes were retained.');
+                prepared.push({ ...change, payload: await prepareCloudPayload(change, owner, context.client) });
+            }
             if (getStorageScope() !== owner || await getSupabaseUserId() !== owner)
                 throw new Error('The account changed during sync. Pending changes were retained.');
-            const payload = await prepareCloudPayload(change, owner, context.client);
-            const { data, error } = await context.client.rpc('apply_tracker_change', { p_entity: change.entity, p_key: change.key, p_payload: payload, p_deleted: change.action === 'delete', p_expected_version: change.expectedVersion, p_change_id: change.id });
-            if (error)
-                throw new Error(error.message.includes('conflict') ? 'This record was changed on another device. Your local changes are kept; resolve the conflict before syncing.' : `Cloud sync failed: ${error.message}. Apply the database migration if this is a new setup.`);
-            if (!Number.isSafeInteger(Number(data)) || Number(data) < 1)
-                throw new Error('Cloud acknowledgement was invalid. Pending changes were retained.');
-            await acknowledgeChange(owner, change.id, change.entity, change.key, Number(data));
+            const { data, error } = await context.client.rpc('apply_tracker_changes', { p_changes: prepared });
+            if (error?.code === 'PGRST202') {
+                // Compatibility for projects running the previous migration.
+                for (const change of prepared) {
+                    if (getStorageScope() !== owner || await getSupabaseUserId() !== owner)
+                        throw new Error('The account changed during sync. Pending changes were retained.');
+                    const result = await context.client.rpc('apply_tracker_change', { p_entity: change.entity, p_key: change.key, p_payload: change.payload, p_deleted: change.action === 'delete', p_expected_version: change.expectedVersion, p_change_id: change.id });
+                    if (result.error) throw syncWriteError(result.error.message);
+                    const version = validateReceiptVersion(result.data, change.expectedVersion);
+                    await acknowledgeChange(owner, change.id, change.entity, change.key, version);
+                }
+            } else {
+                if (error) throw syncWriteError(error.message);
+                await acknowledgeChanges(owner, validateBatchReceipts(prepared, data));
+            }
         }
         const local = await getSnapshot();
         if (local.syncCursor === undefined) {
             const cloud = await supabaseFetchAllUserData();
             if (cloud?.owner !== owner) throw new Error('The account changed during sync.');
-            await applyCloudSnapshot(owner, cloud.snapshot, cloud.versions, cloud.cursor);
+            // Bootstrap is also an overlay: a record can move past the fixed
+            // paging boundary while another device edits it. Keep the known
+            // local copy until the next delta arrives; only tombstones delete.
+            if (cloud.records && cloud.cursor !== undefined)
+                await applyCloudDelta(owner, cloud.records, cloud.cursor);
+            else await applyCloudSnapshot(owner, cloud.snapshot, cloud.versions);
         } else {
             try {
                 const delta = await readDelta(context.client, local.syncCursor);
@@ -284,6 +306,31 @@ export async function syncAccount(): Promise<void> {
         syncing = null;
         syncingOwner = null;
     }
+}
+function syncWriteError(message: string): Error {
+    return new Error(message.includes('conflict') ? 'This record was changed on another device. Your local changes are kept; resolve the conflict before syncing.' : `Cloud sync failed: ${message}. Apply the database migration if this is a new setup.`);
+}
+function validateReceiptVersion(value: unknown, expectedVersion: number): number {
+    const version = Number(value);
+    if ((typeof value !== 'number' && !(typeof value === 'string' && /^[1-9]\d*$/.test(value))) ||
+        !Number.isSafeInteger(version) || version !== expectedVersion + 1)
+        throw new Error('Cloud acknowledgement was invalid. Pending changes were retained.');
+    return version;
+}
+export function validateBatchReceipts(changes: PendingChange[], value: unknown): ChangeReceipt[] {
+    if (!Array.isArray(value) || value.length !== changes.length)
+        throw new Error('Cloud acknowledgement was invalid. Pending changes were retained.');
+    const expected = new Map(changes.map(change => [change.id, change]));
+    const receipts: ChangeReceipt[] = [];
+    for (const receipt of value) {
+        const change = expected.get(receipt?.changeId);
+        const version = change ? validateReceiptVersion(receipt?.version, change.expectedVersion) : 0;
+        if (!change || receipt.entity !== change.entity || receipt.key !== change.key || !Number.isSafeInteger(version) || version < 1)
+            throw new Error('Cloud acknowledgement was invalid. Pending changes were retained.');
+        expected.delete(change.id);
+        receipts.push({ changeId: change.id, entity: change.entity, key: change.key, version });
+    }
+    return receipts;
 }
 async function prepareCloudPayload(change: PendingChange, owner: string, client: typeof supabase): Promise<unknown> {
     if (change.action === 'delete' || (change.entity !== 'food' && change.entity !== 'preferences'))
@@ -358,7 +405,9 @@ export async function resolveCloudConflict(changeId: string, keepLocal: boolean)
     if (!change)
         throw new Error('The pending change no longer exists.');
     await resolvePendingChange(changeId, cloud.versions[`${change.entity}:${change.key}`] ?? 0, keepLocal, owner);
-    await applyCloudSnapshot(owner, cloud.snapshot, cloud.versions, cloud.cursor);
+    if (cloud.records && cloud.cursor !== undefined)
+        await applyCloudDelta(owner, cloud.records, cloud.cursor);
+    else await applyCloudSnapshot(owner, cloud.snapshot, cloud.versions);
     if (keepLocal)
         await syncAccount();
 }
