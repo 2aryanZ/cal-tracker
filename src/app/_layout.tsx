@@ -6,7 +6,7 @@ import { subscribeToReminderTaps } from '@/services/notificationService';
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View, StyleSheet, Platform } from 'react-native';
-import { NutritionProvider, useNutrition } from '@/context/NutritionContext';
+import { NutritionProvider, useNutrition, useNutritionFeedback } from '@/context/NutritionContext';
 import { RewardCelebration } from '@/components/RewardCelebration';
 import { NotificationToast } from '@/components/NotificationToast';
 import { OnboardingModal } from '@/components/OnboardingModal';
@@ -32,10 +32,6 @@ function RootNavigationLayout() {
     [router],
   );
   const {
-    rewardState,
-    dismissReward,
-    toastNotification,
-    dismissToast,
     onboardingVisible,
     hasCompletedOnboarding,
     setOnboardingVisible,
@@ -64,18 +60,7 @@ function RootNavigationLayout() {
           />
         </Stack>
 
-        {/* Floating In-App Push Notification Toast */}
-        <NotificationToast toast={toastNotification} onDismiss={dismissToast} />
-
-        {/* Action-to-Reward Celebration Modal */}
-        <RewardCelebration
-          visible={rewardState.visible}
-          streak={rewardState.streak}
-          title={rewardState.title}
-          subtitle={rewardState.subtitle}
-          caloriesAdded={rewardState.caloriesAdded}
-          onDismiss={dismissReward}
-        />
+        <NutritionFeedback />
 
         {/* Scientific Onboarding / Plan Recalculator Wizard */}
         <OnboardingModal
@@ -88,6 +73,15 @@ function RootNavigationLayout() {
       </View>
     </View>
   );
+}
+
+// Feedback subscribes independently so a toast does not update the navigator.
+function NutritionFeedback() {
+  const { rewardState, dismissReward, toastNotification, dismissToast } = useNutritionFeedback();
+  return <>
+    <NotificationToast toast={toastNotification} onDismiss={dismissToast} />
+    <RewardCelebration {...rewardState} onDismiss={dismissReward} />
+  </>;
 }
 
 export default function RootLayout() {

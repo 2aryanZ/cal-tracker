@@ -18,3 +18,12 @@ These are controlled service checks, not phone frame-rate measurements. A 150-ph
 - Controlled check: each unchanged sync uses one delta RPC and zero legacy table reads, compared with at least six reads previously.
 - Verification: 116 tests, type checking, strict lint, web export, and the rollback-only database checks in `supabase/tests/incremental_sync.sql` passed. Those checks cover pagination, deletion, replayed receipts, transaction rollback, account isolation, and anonymous access.
 - Advisors: active sync policies now evaluate the owner once. Remaining notices concern existing legacy policies, intentionally privileged authenticated write/quota RPCs, the pre-existing RLS auto-enable event trigger, and Auth password protection. No tables, users, or historical data were removed.
+
+## Stage 3: local reads and state stability
+
+- Cache only the latest account snapshot. Published snapshots are immutable; mutations work on drafts and publish after the atomic disk write succeeds. Repeated reads no longer parse the complete document.
+- Preserve unchanged meal, weight, and favorite arrays. Water-only deltas skip meal/weight indexing and sorting. No-op badge/celebration updates skip writes.
+- Feedback has its own context and component; the navigator no longer subscribes to toast or reward state. Retain the existing nutrition API for journal screens and Expo's React Compiler rather than scattering speculative memoization.
+- `npm run benchmark:storage` measures synthetic JavaScript work with an in-memory disk: median water save/refresh was 0.708 ms at 1,000 meals, 3.057 ms at 5,000, and 6.465 ms at 10,000. All warm reads made zero disk calls and retained the meal array. Actual native storage latency and phone render times are not included.
+- Full-document writes remain: these sample documents were 234 KB, 1.17 MB, and 2.35 MB. A transactional store remains a future option for very large histories; do not infer that 10,000-meal native storage has been validated from this benchmark.
+- Verification: 119 tests, type checking, strict lint, production export, and browser smoke checks for Today (water save and toast), History, Progress, and Profile. The production browser reported no console warnings or errors.

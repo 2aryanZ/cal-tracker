@@ -40,6 +40,8 @@ export interface LocalSnapshot {
     syncCursor?: string;
 }
 let scope = 'guest';
+let cachedOwner = '';
+let cachedSnapshot: LocalSnapshot | null = null;
 let tail: Promise<unknown> = Promise.resolve();
 const keyFor = (owner: string) => `@cal_tracker_v2:${owner}`;
 const defaults = (): LocalSnapshot => ({ entries: [], weights: [], waterLogs: {}, goals: { ...DEFAULT_GOALS }, profile: { ...DEFAULT_PROFILE }, notifications: { ...DEFAULT_NOTIFICATIONS }, favorites: [], preference: DEFAULT_DIETARY_PREFERENCE, health: { ...DEFAULT_HEALTH_SYNC }, groups: [], onboardingDone: false, badges: {}, celebratedDates: [], outbox: [], versions: {} });
@@ -50,10 +52,50 @@ function serial<T>(operation: () => Promise<T>): Promise<T> {
     tail = result.catch(() => { });
     return result;
 }
+function freezeSnapshot<T>(value: T): T {
+    if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+        for (const child of Object.values(value)) freezeSnapshot(child);
+        Object.freeze(value);
+    }
+    return value;
+}
+function publish(owner: string, value: LocalSnapshot): LocalSnapshot {
+    cachedOwner = owner;
+    cachedSnapshot = freezeSnapshot(value);
+    return cachedSnapshot;
+}
+function draft(value: LocalSnapshot): LocalSnapshot {
+    return { ...value, waterLogs: { ...value.waterLogs }, badges: { ...value.badges },
+        versions: { ...value.versions }, outbox: value.outbox.map(change => ({ ...change })),
+        celebratedDates: [...value.celebratedDates] };
+}
+function sameFields(a: object, b: object): boolean {
+    const keys = Object.keys(a);
+    return keys.length === Object.keys(b).length && keys.every(key => Object.is(Reflect.get(a, key), Reflect.get(b, key)));
+}
+async function commit(owner: string, value: LocalSnapshot): Promise<void> {
+    const previous = cachedOwner === owner ? cachedSnapshot : null;
+    if (previous) {
+        for (const field of ['waterLogs', 'badges', 'versions'] as const)
+            if (sameFields(value[field], previous[field])) Object.assign(value, { [field]: previous[field] });
+        if (value.celebratedDates.length === previous.celebratedDates.length && value.celebratedDates.every((date, index) => date === previous.celebratedDates[index]))
+            value.celebratedDates = previous.celebratedDates;
+        if (value.outbox.length === previous.outbox.length && value.outbox.every((change, index) => sameFields(change, previous.outbox[index])))
+            value.outbox = previous.outbox;
+        for (const field of ['entries', 'weights', 'favorites'] as const)
+            if (value[field].length === previous[field].length && value[field].every((item, index) => item === previous[field][index]))
+                Object.assign(value, { [field]: previous[field] });
+        if (sameFields(value, previous)) return;
+    }
+    await AsyncStorage.setItem(keyFor(owner), JSON.stringify(value));
+    // Never publish a draft until disk has accepted the data and outbox together.
+    publish(owner, value);
+}
 async function read(owner: string): Promise<LocalSnapshot> {
+    if (cachedOwner === owner && cachedSnapshot) return cachedSnapshot;
     const raw = await AsyncStorage.getItem(keyFor(owner));
     if (raw)
-        return { ...defaults(), ...JSON.parse(raw) };
+        return publish(owner, { ...defaults(), ...JSON.parse(raw) });
     const value = defaults();
     // Preserve existing real guest data. Never assign the old global store to an account.
     // Old keys stay intact as a recovery copy; identifiable demo meals are excluded.
@@ -72,7 +114,7 @@ async function read(owner: string): Promise<LocalSnapshot> {
         value.onboardingDone = (await AsyncStorage.getItem('@cal_ai_onboarding_done_v1')) === 'true';
     }
     await AsyncStorage.setItem(keyFor(owner), JSON.stringify(value));
-    return value;
+    return publish(owner, value);
 }
 function change(s: LocalSnapshot, owner: string, entity: SyncEntity, key: string, payload: unknown, action: 'upsert' | 'delete' = 'upsert') {
     if (owner === 'guest')
@@ -86,7 +128,7 @@ export async function setStorageScope(userId: string | null): Promise<void> { re
 export async function initializeStorage(): Promise<void> { return serial(async () => { await read(scope); }); }
 export async function getSnapshot(): Promise<LocalSnapshot> { const owner = scope; return serial(() => read(owner)); }
 async function mutate<T>(callback: (s: LocalSnapshot, owner: string) => T, owner = scope): Promise<T> {
-    return serial(async () => { const s = await read(owner); const result = callback(s, owner); await AsyncStorage.setItem(keyFor(owner), JSON.stringify(s)); return result; });
+    return serial(async () => { const s = draft(await read(owner)); const result = callback(s, owner); await commit(owner, s); return result; });
 }
 export function toLocalDateString(d: Date): string { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
 export function getTodayDateString(): string { return toLocalDateString(new Date()); }
@@ -165,17 +207,17 @@ export async function markCelebrated(date: string): Promise<boolean> { return mu
     return false; s.celebratedDates.push(date); preferences(s, o); return true; }); }
 export async function getPendingChanges(): Promise<PendingChange[]> { return (await getSnapshot()).outbox; }
 export async function acknowledgeChange(owner: string, changeId: string, entity: SyncEntity, key: string, version: number): Promise<void> {
-    return serial(async () => { const s = await read(owner); s.versions[`${entity}:${key}`] = version; const sent = s.outbox.find(c => c.id === changeId); s.outbox = s.outbox.filter(c => c.id !== changeId); if (!sent) {
+    return serial(async () => { const s = draft(await read(owner)); s.versions[`${entity}:${key}`] = version; const sent = s.outbox.find(c => c.id === changeId); s.outbox = s.outbox.filter(c => c.id !== changeId); if (!sent) {
         const successor = s.outbox.find(c => c.entity === entity && c.key === key);
         if (successor)
             successor.expectedVersion = version;
-    } await AsyncStorage.setItem(keyFor(owner), JSON.stringify(s)); });
+    } await commit(owner, s); });
 }
 export async function applyCloudSnapshot(owner: string, cloud: Partial<LocalSnapshot>, versions: Record<string, number>, cursor?: string): Promise<void> {
     return serial(async () => {
         if (scope !== owner)
             return;
-        const s = await read(owner);
+        const s = draft(await read(owner));
         const dirty = new Set(s.outbox.map(c => `${c.entity}:${c.key}`));
         if (cloud.entries) {
             const local = new Map(s.entries.map(e => [e.id, e]));
@@ -211,13 +253,13 @@ export async function applyCloudSnapshot(owner: string, cloud: Partial<LocalSnap
             if (!dirty.has(key))
                 s.versions[key] = version;
         if (cursor !== undefined) s.syncCursor = cursor;
-        await AsyncStorage.setItem(keyFor(owner), JSON.stringify(s));
+        await commit(owner, s);
     });
 }
 export async function applyCloudDelta(owner: string, records: CloudRecord[], cursor: string): Promise<void> {
     return serial(async () => {
         if (scope !== owner) return;
-        const s = await read(owner);
+        const s = draft(await read(owner));
         if (!records.length && s.syncCursor === cursor) return;
         const dirty = new Set(s.outbox.map(change => `${change.entity}:${change.key}`));
         const clean = records.filter(record => !dirty.has(`${record.entity}:${record.record_key}`));
@@ -226,13 +268,13 @@ export async function applyCloudDelta(owner: string, records: CloudRecord[], cur
         Object.assign(s.versions, versions);
         s.syncCursor = cursor;
         // The cursor and data commit together. A failed write retries the same delta.
-        await AsyncStorage.setItem(keyFor(owner), JSON.stringify(s));
+        await commit(owner, s);
     });
 }
 export async function refreshResolvedPhotos(owner: string, photos: { id: string; path: string; url: string }[]): Promise<void> {
     return serial(async () => {
         if (scope !== owner || !photos.length) return;
-        const s = await read(owner);
+        const s = draft(await read(owner));
         const byId = new Map(photos.map(photo => [`${photo.id}:${photo.path}`, photo.url]));
         let changed = false;
         const refresh = <T extends { id: string; imageUri?: string }>(meal: T): T => {
@@ -246,7 +288,7 @@ export async function refreshResolvedPhotos(owner: string, photos: { id: string;
         if (!changed) return;
         s.entries = entries;
         s.favorites = favorites;
-        await AsyncStorage.setItem(keyFor(owner), JSON.stringify(s));
+        await commit(owner, s);
     });
 }
 export async function exportLocalData(): Promise<string> { const s = await getSnapshot(); return JSON.stringify({ format: 'cal-tracker', version: 2, exportedAt: new Date().toISOString(), ...s }, null, 2); }

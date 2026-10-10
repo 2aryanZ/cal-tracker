@@ -57,7 +57,8 @@
     "lint": "expo lint",
     "test": "node --test tests/*.test.cjs",
     "typecheck": "tsc --noEmit --incremental false",
-    "benchmark:journal": "node scripts/benchmark-journal.cjs"
+    "benchmark:journal": "node scripts/benchmark-journal.cjs",
+    "benchmark:storage": "node scripts/benchmark-storage.cjs"
   },
   "private": true,
   "overrides": {

@@ -11,8 +11,10 @@ export interface CloudRecord {
 
 // Build each index once instead of filtering the entire history for every record.
 export function overlayCloudRecords(snapshot: Partial<LocalSnapshot>, records: CloudRecord[]) {
-  const foods = new Map((snapshot.entries ?? []).map(entry => [entry.id, entry]));
-  const weights = new Map((snapshot.weights ?? []).map(entry => [entry.date, entry]));
+  const hasFoods = records.some(record => record.entity === 'food');
+  const hasWeights = records.some(record => record.entity === 'weight');
+  const foods = new Map((hasFoods ? snapshot.entries ?? [] : []).map(entry => [entry.id, entry]));
+  const weights = new Map((hasWeights ? snapshot.weights ?? [] : []).map(entry => [entry.date, entry]));
   const versions: Record<string, number> = {};
   snapshot.waterLogs = { ...snapshot.waterLogs };
   for (const record of records) {
@@ -34,7 +36,7 @@ export function overlayCloudRecords(snapshot: Partial<LocalSnapshot>, records: C
         if (payload[field] !== undefined) Object.assign(snapshot, { [field]: payload[field] });
     }
   }
-  snapshot.entries = [...foods.values()].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-  snapshot.weights = [...weights.values()].sort((a, b) => b.date.localeCompare(a.date));
+  if (hasFoods || !snapshot.entries) snapshot.entries = [...foods.values()].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  if (hasWeights || !snapshot.weights) snapshot.weights = [...weights.values()].sort((a, b) => b.date.localeCompare(a.date));
   return { snapshot, versions };
 }

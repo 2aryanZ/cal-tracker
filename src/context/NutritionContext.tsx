@@ -103,8 +103,6 @@ interface NutritionContextType {
   };
   isLoading: boolean;
   isSyncing: boolean;
-  rewardState: RewardState;
-  toastNotification: ToastNotification | null;
   journalDays: Readonly<Record<string, IndexedDay>>;
   onboardingVisible: boolean;
   hasCompletedOnboarding: boolean;
@@ -148,14 +146,19 @@ interface NutritionContextType {
   signOut: () => Promise<void>;
   updateAccount: (account: Partial<UserAccount>) => Promise<void>;
   syncCloudNow: () => Promise<void>;
-  dismissReward: () => void;
   triggerManualReward: () => void;
   showToast: (title: string, message: string, icon?: string) => void;
-  dismissToast: () => void;
   refreshData: () => Promise<void>;
   exportData: () => Promise<string>;
   resetData: () => Promise<void>;
 }
+interface NutritionFeedbackType {
+  rewardState: RewardState;
+  toastNotification: ToastNotification | null;
+  dismissReward: () => void;
+  dismissToast: () => void;
+}
+const NutritionFeedbackContext = createContext<NutritionFeedbackType | undefined>(undefined);
 const NutritionContext = createContext<NutritionContextType | undefined>(
   undefined,
 );
@@ -790,8 +793,6 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
     remaining,
     isLoading,
     isSyncing,
-    rewardState,
-    toastNotification,
     journalDays: journal.days,
     onboardingVisible,
     hasCompletedOnboarding: snapshot?.onboardingDone ?? false,
@@ -817,15 +818,16 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
     signOut,
     updateAccount,
     syncCloudNow,
-    dismissReward,
     triggerManualReward,
     showToast,
-    dismissToast,
     refreshData,
     exportData,
     resetData,
   };
+  const feedbackValue = useMemo(() => ({ rewardState, toastNotification, dismissReward, dismissToast }),
+    [rewardState, toastNotification, dismissReward, dismissToast]);
   return (
+    <NutritionFeedbackContext.Provider value={feedbackValue}>
     <NutritionContext.Provider value={contextValue}>
       {/* Render the journal after local hydration. Static HTML cannot know a device's records, locale or current date. */}
       {snapshot ? (
@@ -887,11 +889,18 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
         </View>
       )}
     </NutritionContext.Provider>
+    </NutritionFeedbackContext.Provider>
   );
 }
 export function useNutrition(): NutritionContextType {
   const context = useContext(NutritionContext);
   if (!context)
     throw new Error('useNutrition must be used within NutritionProvider');
+  return context;
+}
+
+export function useNutritionFeedback(): NutritionFeedbackType {
+  const context = useContext(NutritionFeedbackContext);
+  if (!context) throw new Error('useNutritionFeedback must be used within NutritionProvider');
   return context;
 }
