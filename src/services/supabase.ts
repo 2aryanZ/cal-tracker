@@ -1,12 +1,14 @@
 import 'react-native-url-polyfill/auto';
+import { overlayCloudRecords, type CloudRecord } from './cloudRecords';
+import { PhotoUrlCache } from './photoUrlCache';
 import { requireAuthCrypto } from './authCrypto';
 import { Platform } from 'react-native';
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
-import { UserAccount, FoodEntry, WeightEntry, MacroTargets, UserProfile } from '@/types/nutrition';
-import { getStorageScope, getPendingChanges, resolvePendingChange, acknowledgeChange, applyCloudSnapshot, type LocalSnapshot, type PendingChange, type SyncEntity } from './storage';
+import { UserAccount, FoodEntry } from '@/types/nutrition';
+import { getStorageScope, getPendingChanges, resolvePendingChange, acknowledgeChange, applyCloudSnapshot, type LocalSnapshot, type PendingChange } from './storage';
 if (Platform.OS !== 'web' || typeof window !== 'undefined')
     WebBrowser.maybeCompleteAuthSession();
 const serverRendering = Platform.OS === 'web' && typeof window === 'undefined';
@@ -181,40 +183,8 @@ export async function supabaseFetchAllUserData() {
         const p = profiles[0];
         snapshot.profile = { gender: p.gender, age: Number(p.age), heightCm: Number(p.height_cm), weightKg: Number(p.weight_kg), targetWeightKg: Number(p.target_weight_kg), dailySteps: Number(p.daily_steps ?? 8500), activityLevel: p.activity_level, goal: p.goal === 'maintain' ? 'maintenance' : p.goal, unitSystem: p.unit_system ?? 'metric' };
     }
-    const versions: Record<string, number> = {};
-    for (const record of records) {
-        const entity = record.entity as SyncEntity, key = record.record_key;
-        versions[`${entity}:${key}`] = record.version;
-        if (entity === 'food') {
-            snapshot.entries = snapshot.entries!.filter(e => e.id !== key);
-            if (!record.deleted)
-                snapshot.entries.push(record.payload as FoodEntry);
-        }
-        else if (entity === 'weight') {
-            snapshot.weights = snapshot.weights!.filter(e => e.date !== key);
-            if (!record.deleted)
-                snapshot.weights.push(record.payload as WeightEntry);
-        }
-        else if (entity === 'water') {
-            if (!record.deleted)
-                snapshot.waterLogs![key] = record.payload.waterMl;
-            else
-                delete snapshot.waterLogs![key];
-        }
-        else if (entity === 'goals' && !record.deleted)
-            snapshot.goals = record.payload as MacroTargets;
-        else if (entity === 'profile' && !record.deleted)
-            snapshot.profile = record.payload as UserProfile;
-        else if (entity === 'preferences' && !record.deleted) {
-            const p = record.payload;
-            for (const field of ['favorites', 'preference', 'notifications', 'badges', 'onboardingDone', 'celebratedDates'] as const)
-                if (p[field] !== undefined)
-                    Object.assign(snapshot, { [field]: p[field] });
-        }
-    }
-    snapshot.entries!.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-    snapshot.weights!.sort((a, b) => b.date.localeCompare(a.date));
-    await resolvePhotoPaths(snapshot, client);
+    const { versions } = overlayCloudRecords(snapshot, records as CloudRecord[]);
+    await resolvePhotoPaths(snapshot, client, userId);
     return { owner: userId, snapshot, versions };
 }
 let syncing: Promise<void> | null = null;
@@ -295,25 +265,22 @@ async function prepareCloudPayload(change: PendingChange, owner: string, client:
     };
     return { ...preferences, favorites: await Promise.all(preferences.favorites.map(upload)) };
 }
-// Read-only signed URLs are refreshed on each pull; the database stores private paths.
-export async function resolvePhotoPaths(snapshot: Partial<LocalSnapshot>, client: typeof supabase = supabase): Promise<Partial<LocalSnapshot>> {
-    const resolve = async <T extends {
-        imageUri?: string;
-    }>(meal: T): Promise<T> => {
-        const path = (meal as T & {
-            imagePath?: string;
-        }).imagePath;
-        if (!path)
-            return meal;
-        const { data, error } = await client.storage.from('meal-photos').createSignedUrl(path, 60 * 60 * 24);
-        if (error)
-            throw error;
-        return { ...meal, imageUri: data.signedUrl };
+// Only private paths are persisted; short-lived URLs are cached in memory per account.
+const photoUrls = new PhotoUrlCache();
+export async function resolvePhotoPaths(snapshot: Partial<LocalSnapshot>, client: typeof supabase = supabase, owner = getStorageScope()): Promise<Partial<LocalSnapshot>> {
+    const paths = [...(snapshot.entries ?? []), ...(snapshot.favorites ?? [])]
+        .map(meal => (meal as { imagePath?: string }).imagePath).filter((path): path is string => !!path);
+    const urls = await photoUrls.resolve(owner, paths, async (batch, seconds) => {
+        const { data, error } = await client.storage.from('meal-photos').createSignedUrls(batch, seconds);
+        if (error) throw error;
+        return (data ?? []).map(item => ({ path: item.path ?? '', url: item.signedUrl, error: item.error }));
+    });
+    const resolve = <T extends { imageUri?: string }>(meal: T): T => {
+        const path = (meal as T & { imagePath?: string }).imagePath;
+        return path ? { ...meal, imageUri: urls.get(path) } : meal;
     };
-    if (snapshot.entries)
-        snapshot.entries = await Promise.all(snapshot.entries.map(resolve));
-    if (snapshot.favorites)
-        snapshot.favorites = await Promise.all(snapshot.favorites.map(resolve));
+    if (snapshot.entries) snapshot.entries = snapshot.entries.map(resolve);
+    if (snapshot.favorites) snapshot.favorites = snapshot.favorites.map(resolve);
     return snapshot;
 }
 export async function reviewPendingChanges() {

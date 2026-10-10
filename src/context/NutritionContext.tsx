@@ -38,6 +38,7 @@ import type {
   HealthSyncSettings,
   MilestoneBadge,
 } from '@/types/nutrition';
+import { SyncScheduler } from '@/services/syncScheduler';
 import * as storage from '@/services/storage';
 import {
   supabase,
@@ -233,20 +234,20 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
       if (alive.current) setIsSyncing(false);
     }
   }, [refreshLocal, showToast]);
-  const backgroundSync = useCallback(() => {
-    if (ownerRef.current === 'guest') return;
+  const syncScheduler = useRef(new SyncScheduler());
+  const foreground = useRef(!AppState?.currentState || AppState.currentState === 'active');
+  const backgroundSync = useCallback((edit = false) => {
     const owner = ownerRef.current;
-    void syncAccount()
-      .then(() => refreshLocal(owner))
-      .catch((error) => {
+    syncScheduler.current.request(owner, foreground.current, edit, async () => {
+      try {
+        await syncAccount();
+        await refreshLocal(owner);
+      } catch (error) {
         if (ownerRef.current === owner)
-          showToast(
-            'Cloud sync pending',
-            error instanceof Error
-              ? error.message
-              : 'Your changes are kept on this device.',
-          );
-      });
+          showToast('Cloud sync pending', error instanceof Error ? error.message : 'Your changes are kept on this device.');
+        throw error;
+      }
+    });
   }, [refreshLocal, showToast]);
   const activateAccount = useCallback(
     (account: UserAccount): Promise<void> => {
@@ -268,6 +269,7 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
         if (account.isLoggedIn) {
           try {
             await syncAccount();
+            syncScheduler.current.completed(owner);
           } catch (error) {
             showToast(
               'Cloud sync pending',
@@ -288,7 +290,7 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
         void scheduleMealReminders(value.notifications, value.entries).catch(
           (error) => showToast('Reminder setup failed', error.message),
         );
-        if (account.isLoggedIn) backgroundSync();
+
       });
       authTail.current = job.catch((error) => {
         if (alive.current) {
@@ -301,10 +303,11 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
       });
       return job;
     },
-    [backgroundSync, showToast],
+    [showToast],
   );
   useEffect(() => {
     alive.current = true;
+    const scheduler = syncScheduler.current;
     void supabase.auth
       .getSession()
       .then(({ data, error }) => {
@@ -333,10 +336,14 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
       }, 0);
     });
     const app = AppState.addEventListener('change', (state) => {
+      foreground.current = state === 'active';
       if (state === 'active') {
         supabase.auth.startAutoRefresh();
         backgroundSync();
-      } else supabase.auth.stopAutoRefresh();
+      } else {
+        supabase.auth.stopAutoRefresh();
+        syncScheduler.current.cancel();
+      }
     });
     const interval = setInterval(() => {
       const date = storage.getTodayDateString();
@@ -355,6 +362,7 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
       subscription.unsubscribe();
       app.remove();
       clearInterval(interval);
+      scheduler.cancel();
       supabase.auth.stopAutoRefresh();
     };
   }, [activateAccount, backgroundSync, showToast]);
@@ -422,7 +430,7 @@ export function NutritionProvider({ children }: { children: ReactNode }) {
     const result = await operation();
     if (ownerRef.current === owner) {
       await refreshLocal(owner);
-      backgroundSync();
+      backgroundSync(true);
     }
     return result;
   };
