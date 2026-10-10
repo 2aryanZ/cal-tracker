@@ -1,4 +1,5 @@
 import { clearMealPlanCache } from './mealPlanCache';
+import { overlayCloudRecords, type CloudRecord } from './cloudRecords';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { FoodEntry, MacroTargets, UserStats, NotificationSettings, UserProfile, UserAccount, WeightEntry, DietaryPreference, FavoriteMeal, HealthSyncSettings, CommunityGroup, MilestoneBadge } from '@/types/nutrition';
 import { assertDate, assertNumber, calculateStats, newId, validateGoals, validateMeal, validateProfile, validateWeight } from './nutritionRules';
@@ -36,6 +37,7 @@ export interface LocalSnapshot {
     celebratedDates: string[];
     outbox: PendingChange[];
     versions: Record<string, number>;
+    syncCursor?: string;
 }
 let scope = 'guest';
 let tail: Promise<unknown> = Promise.resolve();
@@ -169,7 +171,7 @@ export async function acknowledgeChange(owner: string, changeId: string, entity:
             successor.expectedVersion = version;
     } await AsyncStorage.setItem(keyFor(owner), JSON.stringify(s)); });
 }
-export async function applyCloudSnapshot(owner: string, cloud: Partial<LocalSnapshot>, versions: Record<string, number>): Promise<void> {
+export async function applyCloudSnapshot(owner: string, cloud: Partial<LocalSnapshot>, versions: Record<string, number>, cursor?: string): Promise<void> {
     return serial(async () => {
         if (scope !== owner)
             return;
@@ -208,6 +210,42 @@ export async function applyCloudSnapshot(owner: string, cloud: Partial<LocalSnap
         for (const [key, version] of Object.entries(versions))
             if (!dirty.has(key))
                 s.versions[key] = version;
+        if (cursor !== undefined) s.syncCursor = cursor;
+        await AsyncStorage.setItem(keyFor(owner), JSON.stringify(s));
+    });
+}
+export async function applyCloudDelta(owner: string, records: CloudRecord[], cursor: string): Promise<void> {
+    return serial(async () => {
+        if (scope !== owner) return;
+        const s = await read(owner);
+        if (!records.length && s.syncCursor === cursor) return;
+        const dirty = new Set(s.outbox.map(change => `${change.entity}:${change.key}`));
+        const clean = records.filter(record => !dirty.has(`${record.entity}:${record.record_key}`));
+        const { snapshot, versions } = overlayCloudRecords({ ...s }, clean);
+        Object.assign(s, snapshot);
+        Object.assign(s.versions, versions);
+        s.syncCursor = cursor;
+        // The cursor and data commit together. A failed write retries the same delta.
+        await AsyncStorage.setItem(keyFor(owner), JSON.stringify(s));
+    });
+}
+export async function refreshResolvedPhotos(owner: string, photos: { id: string; path: string; url: string }[]): Promise<void> {
+    return serial(async () => {
+        if (scope !== owner || !photos.length) return;
+        const s = await read(owner);
+        const byId = new Map(photos.map(photo => [`${photo.id}:${photo.path}`, photo.url]));
+        let changed = false;
+        const refresh = <T extends { id: string; imageUri?: string }>(meal: T): T => {
+            const path = (meal as T & { imagePath?: string }).imagePath;
+            const url = path && byId.get(`${meal.id}:${path}`);
+            if (!url || url === meal.imageUri) return meal;
+            changed = true;
+            return { ...meal, imageUri: url };
+        };
+        const entries = s.entries.map(refresh), favorites = s.favorites.map(refresh);
+        if (!changed) return;
+        s.entries = entries;
+        s.favorites = favorites;
         await AsyncStorage.setItem(keyFor(owner), JSON.stringify(s));
     });
 }

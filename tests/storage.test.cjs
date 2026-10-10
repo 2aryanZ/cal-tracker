@@ -50,3 +50,15 @@ test('saved favorites retain estimate provenance and ingredient notes across rea
  const favorite=(await api.getFavoriteMeals())[0];
  assert.equal(favorite.source,'photo');assert.equal(favorite.isAiGenerated,true);assert.equal(favorite.ingredients[0].item,'Rice');
 });
+test('delta pulls preserve untouched history and pending edits while applying deletions atomically',async()=>{
+ const {api}=subject();await api.setStorageScope('alice');await api.applyCloudSnapshot('alice',{entries:[meal('untouched'),meal('deleted'),meal('edited')]},{'food:edited':1},'3');await api.updateFoodEntry({...meal('edited'),calories:200});
+ await api.applyCloudDelta('alice',[{entity:'food',record_key:'deleted',deleted:true,payload:null,version:2},{entity:'food',record_key:'edited',deleted:false,payload:{...meal('edited'),calories:300},version:2},{entity:'food',record_key:'new',deleted:false,payload:meal('new'),version:1}],'6');
+ const s=await api.getSnapshot();assert.equal(s.entries.length,3);assert.equal(s.entries.find(e=>e.id==='edited').calories,200);assert.ok(s.entries.some(e=>e.id==='untouched'));assert.equal(s.syncCursor,'6');assert.equal(s.outbox[0].expectedVersion,1);
+});
+test('failed delta commit retains both old cursor and records; unchanged polls do not write',async()=>{
+ const {api,disk}=subject();await api.setStorageScope('alice');await api.applyCloudSnapshot('alice',{entries:[meal('original')]},{},'1');const set=disk.setItem;disk.setItem=async()=>{throw Error('disk full');};await assert.rejects(api.applyCloudDelta('alice',[{entity:'food',record_key:'original',deleted:true,payload:null,version:2}],'2'),/disk full/);disk.setItem=set;assert.equal((await api.getSnapshot()).syncCursor,'1');assert.equal((await api.getFoodEntries()).length,1);
+ let writes=0;disk.setItem=async(...args)=>{writes++;return set(...args);};await api.applyCloudDelta('alice',[],'1');assert.equal(writes,0);await api.setStorageScope('bob');await api.applyCloudDelta('alice',[],'5');assert.equal((await api.getSnapshot()).syncCursor,undefined);
+});
+test('photo renewal changes only matching private paths without enqueueing another upload',async()=>{
+ const {api}=subject();await api.setStorageScope('alice');await api.applyCloudSnapshot('alice',{entries:[{...meal('photo'),imagePath:'alice/current',imageUri:'https://expired'}]},{},'1');await api.refreshResolvedPhotos('alice',[{id:'photo',path:'alice/old',url:'https://stale'}]);assert.equal((await api.getFoodEntries())[0].imageUri,'https://expired');await api.refreshResolvedPhotos('alice',[{id:'photo',path:'alice/current',url:'https://renewed'}]);assert.equal((await api.getFoodEntries())[0].imageUri,'https://renewed');assert.equal((await api.getPendingChanges()).length,0);assert.equal((await api.getSnapshot()).syncCursor,'1');
+});

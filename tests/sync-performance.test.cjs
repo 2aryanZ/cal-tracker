@@ -28,3 +28,13 @@ test('scheduler debounces edits, suspends background requests, polls empty outbo
  scheduler.request('alice',true,true,async()=>{calls++;throw Error('offline');});await flush();scheduler.request('alice',true,true,run);assert.equal(timers.size,0);now+=30001;scheduler.request('alice',true,false,run);await flush();assert.equal(calls,4);
  scheduler.request('guest',true,true,run);assert.equal(timers.size,0);
 });
+const { fetchCloudDelta } = load('src/services/cloudDelta.ts');
+const row=(key,revision,deleted=false)=>({entity:'food',record_key:key,payload:deleted?null:{id:key,timestamp:'2026-01-01'},deleted,version:1,sync_revision:revision});
+test('delta pagination holds a fixed boundary and includes tombstones',async()=>{
+ const calls=[];const result=await fetchCloudDelta('0',async(after,until)=>{calls.push({after,until});return {error:null,data:after==='0'?{until:'3',records:[row('one',1)],next:'1'}:{until:'3',records:[row('deleted',3,true)],next:null}};});assert.equal(result.cursor,'3');assert.equal(result.records.length,2);assert.equal(result.records[1].deleted,true);assert.deepEqual(calls,[{after:'0',until:null},{after:'1',until:'3'}]);
+});
+test('invalid or failed continuation rejects the entire pull without advancing a cursor',async()=>{
+ await assert.rejects(fetchCloudDelta('1',async()=>({data:{until:'3',records:[row('one',2)],next:'1'},error:null})),/invalid continuation/);
+ let count=0;await assert.rejects(fetchCloudDelta('0',async()=>++count===1?{error:null,data:{until:'2',records:[row('one',1)],next:'1'}}:{data:null,error:{message:'offline'}}),/offline/);
+ await assert.rejects(fetchCloudDelta('0',async()=>({error:null,data:{until:'1',records:[row('bad',2)],next:null}})),/invalid record/);
+});

@@ -1,5 +1,6 @@
 import 'react-native-url-polyfill/auto';
 import { overlayCloudRecords, type CloudRecord } from './cloudRecords';
+import { fetchCloudDelta } from './cloudDelta';
 import { PhotoUrlCache } from './photoUrlCache';
 import { requireAuthCrypto } from './authCrypto';
 import { Platform } from 'react-native';
@@ -8,7 +9,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import { UserAccount, FoodEntry } from '@/types/nutrition';
-import { getStorageScope, getPendingChanges, resolvePendingChange, acknowledgeChange, applyCloudSnapshot, type LocalSnapshot, type PendingChange } from './storage';
+import { getStorageScope, getSnapshot, applyCloudDelta, refreshResolvedPhotos, getPendingChanges, resolvePendingChange, acknowledgeChange, applyCloudSnapshot, type LocalSnapshot, type PendingChange } from './storage';
 if (Platform.OS !== 'web' || typeof window !== 'undefined')
     WebBrowser.maybeCompleteAuthSession();
 const serverRendering = Platform.OS === 'web' && typeof window === 'undefined';
@@ -153,7 +154,7 @@ export async function supabaseSignOut(): Promise<void> {
 }
 // Versioned cloud records coexist with the original tables during migration.
 // Only the authenticated owner's pending changes are sent. No guest data is uploaded.
-export async function supabaseFetchAllUserData() {
+async function fetchLegacyUserData() {
     const context = await accountClient();
     if (!context)
         return null;
@@ -187,6 +188,37 @@ export async function supabaseFetchAllUserData() {
     await resolvePhotoPaths(snapshot, client, userId);
     return { owner: userId, snapshot, versions };
 }
+async function readDelta(client: typeof supabase, after = '0') {
+    return fetchCloudDelta(after, async (cursor, until) => await client.rpc('fetch_tracker_delta', { p_after: cursor, p_until: until, p_limit: 500 }));
+}
+function missingDeltaFunction(error: unknown): boolean {
+    return !!error && typeof error === 'object' && 'code' in error && error.code === 'PGRST202';
+}
+async function hydrateRecords(records: CloudRecord[], client: typeof supabase, owner: string): Promise<CloudRecord[]> {
+    const photoSnapshot: Partial<LocalSnapshot> = {
+        entries: records.filter(r => r.entity === 'food' && !r.deleted).map(r => r.payload),
+        favorites: records.find(r => r.entity === 'preferences' && !r.deleted)?.payload.favorites,
+    };
+    await resolvePhotoPaths(photoSnapshot, client, owner);
+    const meals = new Map(photoSnapshot.entries!.map(entry => [entry.id, entry]));
+    return records.map(record => record.entity === 'food' && !record.deleted ? { ...record, payload: meals.get(record.record_key) } :
+        record.entity === 'preferences' && !record.deleted ? { ...record, payload: { ...record.payload, favorites: photoSnapshot.favorites } } : record);
+}
+export async function supabaseFetchAllUserData() {
+    const context = await accountClient();
+    if (!context) return null;
+    try {
+        const delta = await readDelta(context.client);
+        const records = await hydrateRecords(delta.records, context.client, context.owner);
+        const { snapshot, versions } = overlayCloudRecords({ entries: [], weights: [], waterLogs: {} }, records);
+        return { owner: context.owner, snapshot, versions, cursor: delta.cursor };
+    } catch (error) {
+        // Retain compatibility with projects that have not deployed the new migration.
+        if (!missingDeltaFunction(error)) throw error;
+        const legacy = await fetchLegacyUserData();
+        return legacy ? { ...legacy, cursor: undefined } : null;
+    }
+}
 let syncing: Promise<void> | null = null;
 let syncingOwner: string | null = null;
 export async function syncAccount(): Promise<void> {
@@ -218,9 +250,32 @@ export async function syncAccount(): Promise<void> {
                 throw new Error('Cloud acknowledgement was invalid. Pending changes were retained.');
             await acknowledgeChange(owner, change.id, change.entity, change.key, Number(data));
         }
-        const cloud = await supabaseFetchAllUserData();
-        if (cloud)
-            await applyCloudSnapshot(owner, cloud.snapshot, cloud.versions);
+        const local = await getSnapshot();
+        if (local.syncCursor === undefined) {
+            const cloud = await supabaseFetchAllUserData();
+            if (cloud?.owner !== owner) throw new Error('The account changed during sync.');
+            await applyCloudSnapshot(owner, cloud.snapshot, cloud.versions, cloud.cursor);
+        } else {
+            try {
+                const delta = await readDelta(context.client, local.syncCursor);
+                const records = await hydrateRecords(delta.records, context.client, owner);
+                await applyCloudDelta(owner, records, delta.cursor);
+            } catch (error) {
+                if (!missingDeltaFunction(error)) throw error;
+                const cloud = await fetchLegacyUserData();
+                if (cloud?.owner !== owner) throw new Error('The account changed during sync.');
+                await applyCloudSnapshot(owner, cloud.snapshot, cloud.versions);
+            }
+        }
+        // Delta polling must also renew photos that did not change in the database.
+        if (getStorageScope() === owner) {
+            const current = await getSnapshot();
+            const photos = await resolvePhotoPaths({ entries: current.entries, favorites: current.favorites }, context.client, owner);
+            await refreshResolvedPhotos(owner, [...(photos.entries ?? []), ...(photos.favorites ?? [])].flatMap(meal => {
+                const path = (meal as { imagePath?: string }).imagePath;
+                return path && meal.imageUri ? [{ id: meal.id, path, url: meal.imageUri }] : [];
+            }));
+        }
     })();
     try {
         await syncing;
@@ -277,7 +332,8 @@ export async function resolvePhotoPaths(snapshot: Partial<LocalSnapshot>, client
     });
     const resolve = <T extends { imageUri?: string }>(meal: T): T => {
         const path = (meal as T & { imagePath?: string }).imagePath;
-        return path ? { ...meal, imageUri: urls.get(path) } : meal;
+        const url = path && urls.get(path);
+        return url && url !== meal.imageUri ? { ...meal, imageUri: url } : meal;
     };
     if (snapshot.entries) snapshot.entries = snapshot.entries.map(resolve);
     if (snapshot.favorites) snapshot.favorites = snapshot.favorites.map(resolve);
@@ -302,7 +358,7 @@ export async function resolveCloudConflict(changeId: string, keepLocal: boolean)
     if (!change)
         throw new Error('The pending change no longer exists.');
     await resolvePendingChange(changeId, cloud.versions[`${change.entity}:${change.key}`] ?? 0, keepLocal, owner);
-    await applyCloudSnapshot(owner, cloud.snapshot, cloud.versions);
+    await applyCloudSnapshot(owner, cloud.snapshot, cloud.versions, cloud.cursor);
     if (keepLocal)
         await syncAccount();
 }
